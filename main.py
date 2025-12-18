@@ -1,5 +1,5 @@
 import tkinter as tk
-from forms import SchoolManagementApp
+from enterprise_forms import EnterpriseSchoolManagementApp
 from models import Session, Subject, Attendance
 
 def initialize_subjects():
@@ -41,5 +41,5 @@ if __name__ == "__main__":
     # Set initial window size
     root.geometry("1100x800")
     
-    app = SchoolManagementApp(root)
+    app = EnterpriseSchoolManagementApp(root)
     root.mainloop()

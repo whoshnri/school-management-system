@@ -17,6 +17,20 @@ class Attendance(Base):
     # Ensures a student has only one record per date
     __table_args__ = (UniqueConstraint('student_id', 'date', name='_student_date_uc'),)
 
+class Fee(Base):
+    __tablename__ = 'fees'
+
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey('students.id'), nullable=False)
+    term = Column(Integer, nullable=False)
+    amount_due = Column(Float, default=0)
+    amount_paid = Column(Float, default=0)
+
+    student = relationship("Student", back_populates="fees")
+
+    __table_args__ = (UniqueConstraint('student_id', 'term', name='_student_term_uc'),)
+
+
 class Student(Base):
     __tablename__ = 'students'
     
@@ -26,6 +40,7 @@ class Student(Base):
     class_name = Column(String(10), nullable=False)
     marks = relationship("Mark", back_populates="student")
     attendance_records = relationship("Attendance", order_by=Attendance.date, back_populates="student")
+    fees = relationship("Fee", back_populates="student")
 
 class Subject(Base):
     __tablename__ = 'subjects'
