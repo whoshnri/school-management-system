@@ -64,6 +64,18 @@ class Mark(Base):
     student = relationship("Student", back_populates="marks")
     subject = relationship("Subject")
 
+
+class Admin(Base):
+    """Admin user for system login and settings."""
+    __tablename__ = 'admins'
+    
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(256), nullable=False)
+    created_at = Column(String(50), nullable=False)
+    is_active = Column(Boolean, default=True)
+
+
 # Use SQLite for now (easier setup) - change to PostgreSQL later
 engine = create_engine('sqlite:///school_management.db')
 Base.metadata.create_all(engine)
