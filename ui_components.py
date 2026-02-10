@@ -411,7 +411,20 @@ class ResultsView(ctk.CTkFrame):
                 text=f"Term {term} (Average: {avg:.1f})",
                 font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
                 text_color=("#000000", "#ffffff")
-            ).pack(padx=15, pady=10)
+            ).pack(side="left", padx=15, pady=10)
+            
+            # Export button
+            ctk.CTkButton(
+                term_frame,
+                text="📄 Export Report Card",
+                command=lambda t=term: self.export_report_card(t),
+                width=160,
+                height=35,
+                corner_radius=8,
+                fg_color=("#6c757d", "#5f6368"),
+                hover_color=("#5a6268", "#4a4f54"),
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold")
+            ).pack(side="right", padx=15, pady=10)
             
             # Marks for this term
             for mark in term_marks:
@@ -429,3 +442,44 @@ class ResultsView(ctk.CTkFrame):
                     font=ctk.CTkFont(family="Segoe UI", size=13),
                     text_color=grade_color
                 ).pack(side="left", padx=15, pady=8)
+    
+    def export_report_card(self, term):
+        """Export report card as PDF for the selected term."""
+        from tkinter import filedialog
+        from report_card_pdf import generate_report_card
+        from models import Student
+        
+        try:
+            # Get student info for filename
+            student = self.session.query(Student).filter_by(id=self.student_id).first()
+            if not student:
+                messagebox.showerror("Error", "Student not found")
+                return
+            
+            # Generate default filename
+            default_filename = f"{student.name.replace(' ', '_')}_Term{term}_ReportCard.pdf"
+            
+            # Ask user where to save
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+                initialfile=default_filename,
+                title="Save Report Card As"
+            )
+            
+            if file_path:
+                # Generate PDF
+                success = generate_report_card(self.student_id, term, file_path)
+                
+                if success:
+                    messagebox.showinfo(
+                        "Success", 
+                        f"Report card exported successfully!\n\nSaved to:\n{file_path}"
+                    )
+                else:
+                    messagebox.showerror(
+                        "Error", 
+                        "Failed to generate report card. Please ensure the student has grades for this term."
+                    )
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while exporting:\n{str(e)}")
