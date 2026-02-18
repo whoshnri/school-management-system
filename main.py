@@ -1,6 +1,7 @@
 import tkinter as tk
 import customtkinter as ctk
 import hashlib
+import os
 from enterprise_forms import EnterpriseSchoolManagementApp
 from models import Session, Subject, Admin
 
@@ -19,27 +20,24 @@ COLORS = {
 
 
 def initialize_subjects():
-    """Pre-populate the 20 subjects"""
+    """Pre-populate Nigerian secondary school subjects"""
     session = Session()
     
     if session.query(Subject).count() == 0:
+        # Nigerian Secondary School Subjects
         subjects_data = [
-            ("MATH", "Mathematics"), ("ENG", "English"), ("PHY", "Physics"),
-            ("CHEM", "Chemistry"), ("BIO", "Biology"), ("HIST", "History"),
-            ("GEO", "Geography"), ("COMM", "Commerce"), ("ACC", "Accounts"),
-            ("AGRIC", "Agricultural Science"), ("LIT", "Literature"),
-            ("FRENCH", "French"), ("ARABIC", "Arabic"), ("IRS", "Islamic Studies"),
-            ("CRK", "Christian Knowledge"), ("CIVIC", "Civic Education"),
-            ("COMP", "Computer Science"), ("FOOD", "Food & Nutrition"),
-            ("ART", "Fine Arts"), ("MUSIC", "Music")
-        ]
+            ("ENG", "English Language"), ("MATH", "Mathematics"), ("CIVIC", "Civic Education"),
+            ("ECON", "Economics"), ("PHY", "Physics"), ("CHEM", "Chemistry"),
+            ("BIO", "Biology"), ("AGRIC", "Agricultural Science"), ("FMATH", "Further Mathematics"),
+            ("GEO", "Geography"), ("FOOD", "Food and Nutrition"), ("DATA", "Data Processing")
+        ]   
         
         for code, name in subjects_data:
             subject = Subject(subject_code=code, subject_name=name)
             session.add(subject)
         
         session.commit()
-        print("20 subjects initialized successfully!")
+        print(f"{len(subjects_data)} Nigerian secondary school subjects initialized successfully!")
     session.close()
 
 
@@ -92,11 +90,50 @@ class LoginWindow:
         logo_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         logo_frame.pack(pady=(50, 30))
         
-        ctk.CTkLabel(
-            logo_frame,
-            text="🎓",
-            font=ctk.CTkFont(size=60)
-        ).pack()
+        # Try to load the app icon
+        try:
+            from PIL import Image
+            # Try both possible icon files
+            icon_path = None
+            if os.path.exists("app_icon.png"):
+                icon_path = "app_icon.png"
+            elif os.path.exists("icon.jpg.jpeg"):
+                icon_path = "icon.jpg.jpeg"
+            elif os.path.exists("icon.jpg"):
+                icon_path = "icon.jpg"
+            
+            if icon_path:
+                # Load and resize the icon
+                icon_image = Image.open(icon_path)
+                icon_image = icon_image.resize((80, 80), Image.Resampling.LANCZOS)
+                icon_photo = ctk.CTkImage(light_image=icon_image, dark_image=icon_image, size=(80, 80))
+                
+                ctk.CTkLabel(
+                    logo_frame,
+                    image=icon_photo,
+                    text=""
+                ).pack()
+            else:
+                # Fallback to emoji if no icon found
+                ctk.CTkLabel(
+                    logo_frame,
+                    text="🎓",
+                    font=ctk.CTkFont(size=60)
+                ).pack()
+        except ImportError:
+            # Fallback if PIL is not available
+            ctk.CTkLabel(
+                logo_frame,
+                text="🎓",
+                font=ctk.CTkFont(size=60)
+            ).pack()
+        except Exception:
+            # Fallback for any other error
+            ctk.CTkLabel(
+                logo_frame,
+                text="🎓",
+                font=ctk.CTkFont(size=60)
+            ).pack()
         
         ctk.CTkLabel(
             logo_frame,
@@ -217,7 +254,7 @@ def start_main_app(root, current_admin):
         widget.destroy()
     
     # Resize for main app
-    root.geometry("1100x800")
+    root.geometry("1200x800")
     root.title("Enterprise School Management System")
     root.resizable(True, True)
     

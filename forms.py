@@ -32,12 +32,6 @@ class StudentRegistrationTab(ctk.CTkFrame):
         self.on_student_added_callback = on_student_added_callback
         self.setup_ui()
     
-    def validate_numeric_input(self, new_value):
-        """Validate that input contains only numeric characters."""
-        if new_value == "":
-            return True
-        return new_value.isdigit()
-
     def setup_ui(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -74,21 +68,16 @@ class StudentRegistrationTab(ctk.CTkFrame):
             font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
             text_color=COLORS["text_primary"]
         ).grid(row=1, column=0, padx=25, pady=(15, 5), sticky="e")
-
-        # Create validation command for numeric input
-        vcmd = (self.register(self.validate_numeric_input), '%P')
         
         self.id_entry = ctk.CTkEntry(
             form_card,
-            placeholder_text="e.g. 001, 2024001",
+            placeholder_text="e.g. S001, STU2024001",
             width=380,
             height=45,
             corner_radius=10,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=14),
-            validate="key",
-            validatecommand=vcmd
+            font=ctk.CTkFont(family="Segoe UI", size=14)
         )
         self.id_entry.grid(row=1, column=1, padx=25, pady=(15, 5), sticky="w")
 
@@ -136,7 +125,7 @@ class StudentRegistrationTab(ctk.CTkFrame):
 
         self.class_entry = ctk.CTkComboBox(
             form_card,
-            values=["JSS1", "JSS2", "JSS3", "SSS1", "SSS2", "SSS3"],
+            values=["SSS1", "SSS2", "SSS3"],
             width=380,
             height=45,
             corner_radius=10,
@@ -298,8 +287,8 @@ class MarksEntryTab(ctk.CTkFrame):
         self.term_combo = ctk.CTkOptionMenu(
             controls_frame,
             variable=self.term_var,
-            values=["1", "2", "3"],
-            width=80,
+            values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
+            width=150,
             height=40,
             corner_radius=8,
             fg_color=COLORS["border"],
@@ -333,7 +322,7 @@ class MarksEntryTab(ctk.CTkFrame):
         self.marks_frame.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
 
         # Headers
-        headers = ["Subject", "CA (40)", "Exam (60)", "Total", "Grade"]
+        headers = ["Subject", "CA (30)", "Exam (70)", "Total", "Grade"]
         col_widths = [200, 100, 100, 80, 80]
         self.marks_frame.grid_columnconfigure(0, weight=2, minsize=200)
         for i in range(1, 5):
@@ -395,6 +384,25 @@ class MarksEntryTab(ctk.CTkFrame):
         except ValueError:
             var.set(str(min_value))
 
+    def validate_mark_input(self, var, max_value):
+        """Validate mark input to ensure it's within range."""
+        try:
+            value = var.get().strip()
+            if value == "":
+                return True  # Allow empty
+            
+            mark = float(value)
+            if mark < 0:
+                var.set("0")
+            elif mark > max_value:
+                var.set(str(max_value))
+            return True
+        except ValueError:
+            # Remove invalid characters
+            valid_chars = ''.join(c for c in var.get() if c.isdigit() or c == '.')
+            var.set(valid_chars)
+            return False
+
     def on_student_change(self, value):
         self.load_existing_marks()
 
@@ -402,7 +410,7 @@ class MarksEntryTab(ctk.CTkFrame):
         self.load_existing_marks()
 
     def load_students(self):
-        students = self.session.query(Student).order_by(Student.name).all()
+        students = self.session.query(Student).order_by(Student.full_name).all()
         self.active_students = students
         if students:
             student_list = [f"{s.student_id} - {s.name}" for s in students]
@@ -431,7 +439,7 @@ class MarksEntryTab(ctk.CTkFrame):
                 text_color=COLORS["text_primary"]
             ).grid(row=i, column=0, sticky="ew", padx=15, pady=10)
 
-            ca_var = tk.StringVar(value="40")  # Default to max value
+            ca_var = tk.StringVar(value="30")  # Default to max value
             ca_frame = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
             ca_frame.grid(row=i, column=1, padx=10, pady=10)
             
@@ -445,9 +453,12 @@ class MarksEntryTab(ctk.CTkFrame):
                 border_color=COLORS["border"],
                 font=ctk.CTkFont(family="Segoe UI", size=13),
                 justify="center",
-                
+                validatecommand=(self.register(lambda char: char.isdigit() or char == ""), "%S")
             )
             ca_entry.pack(side="left", padx=2)
+            
+            # Add validation for CA (0-30)
+            ca_var.trace_add('write', lambda *args, v=ca_var: self.validate_mark_input(v, 30))
             
             # CA increment/decrement buttons
             ca_btn_frame = ctk.CTkFrame(ca_frame, fg_color="transparent")
@@ -462,7 +473,7 @@ class MarksEntryTab(ctk.CTkFrame):
                 fg_color=COLORS["secondary"],
                 hover_color=COLORS["primary"],
                 font=ctk.CTkFont(size=10),
-                command=lambda v=ca_var: self.increment_mark(v, 40)
+                command=lambda v=ca_var: self.increment_mark(v, 30)
             ).pack(pady=1)
             
             ctk.CTkButton(
@@ -477,7 +488,7 @@ class MarksEntryTab(ctk.CTkFrame):
                 command=lambda v=ca_var: self.decrement_mark(v, 0)
             ).pack(pady=1)
 
-            exam_var = tk.StringVar(value="60")  # Default to max value
+            exam_var = tk.StringVar(value="70")  # Default to max value
             exam_frame = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
             exam_frame.grid(row=i, column=2, padx=10, pady=10)
             
@@ -494,6 +505,9 @@ class MarksEntryTab(ctk.CTkFrame):
             )
             exam_entry.pack(side="left", padx=2)
             
+            # Add validation for Exam (0-70)
+            exam_var.trace_add('write', lambda *args, v=exam_var: self.validate_mark_input(v, 70))
+            
             # Exam increment/decrement buttons
             exam_btn_frame = ctk.CTkFrame(exam_frame, fg_color="transparent")
             exam_btn_frame.pack(side="left", padx=2)
@@ -507,7 +521,7 @@ class MarksEntryTab(ctk.CTkFrame):
                 fg_color=COLORS["secondary"],
                 hover_color=COLORS["primary"],
                 font=ctk.CTkFont(size=10),
-                command=lambda v=exam_var: self.increment_mark(v, 60)
+                command=lambda v=exam_var: self.increment_mark(v, 70)
             ).pack(pady=1)
             
             ctk.CTkButton(
@@ -560,7 +574,8 @@ class MarksEntryTab(ctk.CTkFrame):
             if not student:
                 return
 
-            term = int(self.term_var.get())
+            term_value = self.term_var.get()
+            term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
 
             for sub in self.subjects:
                 widgets = self.entries[sub.id]
@@ -594,10 +609,10 @@ class MarksEntryTab(ctk.CTkFrame):
             exam = float(exam_str) if exam_str else 0
 
             # Validation
-            if ca > 40:
-                ca = 40
-            if exam > 60:
-                exam = 60
+            if ca > 30:
+                ca = 30
+            if exam > 70:
+                exam = 70
             if ca < 0:
                 ca = 0
             if exam < 0:
@@ -626,20 +641,21 @@ class MarksEntryTab(ctk.CTkFrame):
             if not student:
                 return
 
-            term = int(self.term_var.get())
+            term_value = self.term_var.get()
+            term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
             saved_count = 0
 
             for sub in self.subjects:
                 widgets = self.entries[sub.id]
                 try:
                     ca = float(widgets['ca'].get() or 0)
-                    ca = min(max(ca, 0), 40)  # Clamp 0-40
+                    ca = min(max(ca, 0), 30)  # Clamp 0-30
                 except ValueError:
                     ca = 0.0
 
                 try:
                     exam = float(widgets['exam'].get() or 0)
-                    exam = min(max(exam, 0), 60)  # Clamp 0-60
+                    exam = min(max(exam, 0), 70)  # Clamp 0-70
                 except ValueError:
                     exam = 0.0
 
@@ -701,7 +717,7 @@ class BroadsheetTab(ctk.CTkFrame):
             text_color=COLORS["text_secondary"]
         ).pack(side="left", padx=(0, 8))
 
-        class_values = [f"{cls} ({self.get_class_population(cls)})" for cls in ["JSS1", "JSS2", "JSS3", "SSS1", "SSS2", "SSS3"]]
+        class_values = [f"{cls} ({self.get_class_population(cls)})" for cls in ["SSS1", "SSS2", "SSS3"]]
         self.class_filter_raw = ctk.CTkComboBox(
             controls_frame,
             values=class_values,
@@ -723,8 +739,8 @@ class BroadsheetTab(ctk.CTkFrame):
 
         self.term_filter = ctk.CTkOptionMenu(
             controls_frame,
-            values=["1", "2", "3"],
-            width=80,
+            values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
+            width=150,
             height=40,
             corner_radius=8,
             fg_color=COLORS["border"],
@@ -794,13 +810,14 @@ class BroadsheetTab(ctk.CTkFrame):
 
         class_name_full = self.class_filter_raw.get()
         class_name = class_name_full.split(' ')[0] if class_name_full else ""
-        term = int(self.term_filter.get())
+        term_value = self.term_filter.get()
+        term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
 
         if not class_name:
             messagebox.showwarning("Selection Error", "Please select a class.")
             return
 
-        self.students = self.session.query(Student).filter_by(class_name=class_name).order_by(Student.name).all()
+        self.students = self.session.query(Student).filter_by(class_name=class_name).order_by(Student.full_name).all()
         self.subjects = self.session.query(Subject).all()
 
         # Empty state
@@ -1005,7 +1022,8 @@ class BroadsheetTab(ctk.CTkFrame):
                         subject_cols[i] = subject_map[col]
                 
                 # Get term from filter
-                term = int(self.term_filter.get())
+                term_value = self.term_filter.get()
+                term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
                 
                 for row in reader:
                     if len(row) < 3:
@@ -1116,7 +1134,7 @@ class AttendanceTab(ctk.CTkFrame):
         ).pack(side="left", padx=(0, 8))
 
         # Always show all classes regardless of student enrollment
-        class_values = ["JSS1", "JSS2", "JSS3", "SSS1", "SSS2", "SSS3"]
+        class_values = ["SSS1", "SSS2", "SSS3"]
 
         self.class_var = ctk.StringVar()
         self.class_combo = ctk.CTkComboBox(
@@ -1252,7 +1270,7 @@ class AttendanceTab(ctk.CTkFrame):
         # Load students
         self.students = self.session.query(Student).filter_by(
             class_name=self.current_class
-        ).order_by(Student.name).all()
+        ).order_by(Student.full_name).all()
         
         if not self.students:
             self.show_no_students()
@@ -1477,13 +1495,13 @@ class AttendanceTab(ctk.CTkFrame):
 class SchoolManagementApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("School Management System")
+        self.root.title("Glorious Fountain Academy")
         self.session = Session()
 
         self.setup_tabs()
 
     def setup_tabs(self):
-        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview = ctk.CTkTabview(self.root, anchor='center')
         self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.tabview.add("Student Registration")

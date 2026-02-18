@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Date, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
+from datetime import date as dt_date
 
 Base = declarative_base()
 
@@ -36,11 +37,36 @@ class Student(Base):
     
     id = Column(Integer, primary_key=True)
     student_id = Column(String(20), unique=True, nullable=False)
-    name = Column(String(100), nullable=False)
+    
+    # Personal Information
+    full_name = Column(String(200), nullable=False)
+    date_of_birth = Column(Date, nullable=False)
+    age = Column(Integer, nullable=False)
+    sex = Column(String(10), nullable=False)  # Male/Female
+    
+    # Contact Information
+    home_address = Column(String(500), nullable=False)
+    phone_number = Column(String(20), nullable=True)
+    
+    # Guardian/Parent Information
+    guardian_name = Column(String(200), nullable=False)
+    guardian_phone = Column(String(20), nullable=False)
+    guardian_address = Column(String(500), nullable=False)
+    
+    # Academic Information
     class_name = Column(String(10), nullable=False)
+    admission_year = Column(Integer, nullable=False)
+    state_of_origin = Column(String(100), nullable=False)
+    
+    # Relationships
     marks = relationship("Mark", back_populates="student")
     attendance_records = relationship("Attendance", order_by=Attendance.date, back_populates="student")
     fees = relationship("Fee", back_populates="student")
+    
+    @property
+    def name(self):
+        """Backward compatibility property."""
+        return self.full_name
 
 class Subject(Base):
     __tablename__ = 'subjects'
