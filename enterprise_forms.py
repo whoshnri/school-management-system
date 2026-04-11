@@ -5,17 +5,17 @@ from ui_components import TextLabelManager, ModalController
 
 # Modern color palette
 COLORS = {
-    "primary": "#1a73e8",
+    "primary":       "#1a73e8",
     "primary_hover": "#1557b0",
-    "secondary": "#5f6368",
-    "success": "#34a853",
-    "warning": "#fbbc04",
-    "danger": "#ea4335",
-    "bg_dark": "#1e1e2e",
-    "bg_card": "#2a2a3e",
-    "text_primary": "#ffffff",
-    "text_secondary": "#a0a0a0",
-    "border": "#3a3a4e"
+    "secondary":     "#5f6368",
+    "success":       "#34a853",
+    "warning":       "#fbbc04",
+    "danger":        "#ea4335",
+    "bg_dark":       "#ffffff",   # light mode
+    "bg_card":       "#f8f9fa",
+    "text_primary":  "#202124",
+    "text_secondary":"#5f6368",
+    "border":        "#dadce0",
 }
 
 
@@ -1128,7 +1128,7 @@ class EnterpriseSchoolManagementApp:
     def __init__(self, root, current_admin=None):
         self.root = root
         self.current_admin = current_admin
-        self.root.title("Enterprise School Management System")
+        self.root.title("GFA Admin Panel")
         self.session = Session()
 
         # Configure grid layout (1x2)
@@ -1146,7 +1146,7 @@ class EnterpriseSchoolManagementApp:
         self.navigation_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color=COLORS["bg_dark"], width=220)
         self.navigation_frame.grid(row=0, column=0, sticky="nsew")
         self.navigation_frame.grid_propagate(False)  # Fix sidebar width
-        self.navigation_frame.grid_rowconfigure(9, weight=1)  # Updated for Settings row
+        self.navigation_frame.grid_rowconfigure(11, weight=1)  # Updated for Settings row
 
         # Logo/Title
         logo_frame = ctk.CTkFrame(self.navigation_frame, fg_color="transparent")
@@ -1200,7 +1200,7 @@ class EnterpriseSchoolManagementApp:
 
         ctk.CTkLabel(
             logo_frame,
-            text="Admin Panel",
+            text="GFA Admin Panel",
             font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=COLORS["text_primary"]
         ).pack(side="left", padx=12)
@@ -1213,6 +1213,8 @@ class EnterpriseSchoolManagementApp:
             (TextLabelManager.get_nav_text('marks'), "Grades Entry", 4),
             (TextLabelManager.get_nav_text('broadsheet'), "Broadsheet", 5),
             (TextLabelManager.get_nav_text('attendance'), "Attendance", 6),
+            ("Sessions", "Sessions", 7),
+            ("Departments", "Departments", 8),
         ]
 
         self.nav_buttons = {}
@@ -1235,7 +1237,7 @@ class EnterpriseSchoolManagementApp:
 
         # Separator before settings
         separator = ctk.CTkFrame(self.navigation_frame, fg_color=COLORS["border"], height=1)
-        separator.grid(row=7, column=0, sticky="ew", padx=20, pady=20)
+        separator.grid(row=9, column=0, sticky="ew", padx=20, pady=20)
         
         # Settings button
         settings_btn = ctk.CTkButton(
@@ -1251,7 +1253,7 @@ class EnterpriseSchoolManagementApp:
             font=ctk.CTkFont(family="Segoe UI", size=14),
             command=lambda: self.select_frame_by_name("Admin Settings")
         )
-        settings_btn.grid(row=8, column=0, sticky="ew", padx=10, pady=3)
+        settings_btn.grid(row=10, column=0, sticky="ew", padx=10, pady=3)
         self.nav_buttons["Admin Settings"] = settings_btn
         
         # Logout button
@@ -1268,11 +1270,13 @@ class EnterpriseSchoolManagementApp:
             font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
             command=self.logout
         )
-        logout_btn.grid(row=9, column=0, sticky="ew", padx=10, pady=(10, 3))
+        logout_btn.grid(row=11, column=0, sticky="ew", padx=10, pady=(10, 3))
 
     def setup_main_frames(self):
         from forms import MarksEntryTab, BroadsheetTab, AttendanceTab
         from enhanced_registration import EnhancedStudentRegistrationTab
+        from sessions_tab import SessionsTab
+        from departments_tab import DepartmentsTab
 
         self.students_list_frame = StudentsListTab(self.root, self.session, on_student_deleted_callback=self.refresh_data)
         self.school_fees_frame = SchoolFeesTab(self.root, self.session)
@@ -1281,6 +1285,8 @@ class EnterpriseSchoolManagementApp:
         self.broadsheet_frame = BroadsheetTab(self.root, self.session)
         self.attendance_frame = AttendanceTab(self.root, self.session)
         self.admin_settings_frame = AdminSettingsTab(self.root, self.session, self.current_admin)
+        self.sessions_frame = SessionsTab(self.root)
+        self.departments_frame = DepartmentsTab(self.root)
 
     def select_frame_by_name(self, name):
         # Update button styles
@@ -1299,6 +1305,8 @@ class EnterpriseSchoolManagementApp:
             "Broadsheet": self.broadsheet_frame,
             "Attendance": self.attendance_frame,
             "Admin Settings": self.admin_settings_frame,
+            "Sessions": self.sessions_frame,
+            "Departments": self.departments_frame,
         }
 
         # Show/hide frames

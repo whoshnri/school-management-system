@@ -3,51 +3,68 @@ import customtkinter as ctk
 import hashlib
 import os
 from enterprise_forms import EnterpriseSchoolManagementApp
-from models import Session, Subject, Admin
+from models import Session, Subject, Admin, Department, DepartmentSubject, AcademicSession, run_migrations
 
-# Modern color palette
 COLORS = {
-    "primary": "#1a73e8",
+    "primary":       "#1a73e8",
     "primary_hover": "#1557b0",
-    "bg_dark": "#1e1e2e",
-    "bg_card": "#2a2a3e",
-    "text_primary": "#ffffff",
-    "text_secondary": "#a0a0a0",
-    "border": "#3a3a4e",
-    "success": "#34a853",
-    "danger": "#ea4335"
+    "bg_main":       "#ffffff",
+    "bg_card":       "#f8f9fa",
+    "text_primary":  "#202124",
+    "text_secondary":"#5f6368",
+    "border":        "#dadce0",
+    "success":       "#34a853",
+    "danger":        "#ea4335",
+}
+
+DEPARTMENT_DEFAULTS = {
+    "Science":    ["English Language", "Mathematics", "Physics", "Chemistry",
+                   "Biology", "Agricultural Science", "Further Mathematics",
+                   "Geography", "Data Processing"],
+    "Art":        ["English Language", "Mathematics", "Civic Education",
+                   "Economics", "Geography", "Food and Nutrition",
+                   "Literature in English", "Government", "History"],
+    "Commercial": ["English Language", "Mathematics", "Civic Education",
+                   "Economics", "Commerce", "Financial Accounting",
+                   "Data Processing", "Business Studies", "Office Practice"],
 }
 
 
 def initialize_subjects():
-    """Pre-populate Nigerian secondary school subjects"""
+    """Pre-populate Nigerian secondary school subjects."""
     session = Session()
-    
     if session.query(Subject).count() == 0:
-        # Nigerian Secondary School Subjects
         subjects_data = [
             ("ENG", "English Language"), ("MATH", "Mathematics"), ("CIVIC", "Civic Education"),
             ("ECON", "Economics"), ("PHY", "Physics"), ("CHEM", "Chemistry"),
             ("BIO", "Biology"), ("AGRIC", "Agricultural Science"), ("FMATH", "Further Mathematics"),
             ("GEO", "Geography"), ("FOOD", "Food and Nutrition"), ("DATA", "Data Processing")
-        ]   
-        
+        ]
         for code, name in subjects_data:
-            subject = Subject(subject_code=code, subject_name=name)
-            session.add(subject)
-        
+            session.add(Subject(subject_code=code, subject_name=name))
         session.commit()
-        print(f"{len(subjects_data)} Nigerian secondary school subjects initialized successfully!")
+    session.close()
+
+
+def initialize_departments():
+    """Pre-seed departments and their default subjects on first run."""
+    session = Session()
+    if session.query(Department).count() == 0:
+        for dept_name, subjects in DEPARTMENT_DEFAULTS.items():
+            dept = Department(name=dept_name)
+            session.add(dept)
+            session.flush()
+            for s in subjects:
+                session.add(DepartmentSubject(dept_id=dept.id, subject_name=s))
+        session.commit()
     session.close()
 
 
 def initialize_admin():
-    """Create default admin if none exists"""
+    """Create default admin if none exists."""
     from datetime import datetime
     session = Session()
-    
     if session.query(Admin).count() == 0:
-        # Create default admin
         password_hash = hashlib.sha256("as5XIUdc".encode()).hexdigest()
         admin = Admin(
             username="henrybassey2007@gmail.com",
@@ -57,229 +74,153 @@ def initialize_admin():
         )
         session.add(admin)
         session.commit()
-        print("Default admin created: henrybassey2007@gmail.com")
     session.close()
 
 
 class LoginWindow:
-    """Login window for admin authentication."""
-    
     def __init__(self, root, on_success_callback):
         self.root = root
         self.on_success_callback = on_success_callback
         self.session = Session()
-        
-        self.root.title("School Management System - Login")
+
+        self.root.title("GFA Admin Panel")
         self.root.geometry("450x500")
         self.root.resizable(False, False)
-        
-        # Center window
+
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - 225
         y = (self.root.winfo_screenheight() // 2) - 250
         self.root.geometry(f"450x500+{x}+{y}")
-        
+
         self.setup_ui()
-    
+
     def setup_ui(self):
-        # Main frame
-        main_frame = ctk.CTkFrame(self.root, fg_color=COLORS["bg_dark"])
+        main_frame = ctk.CTkFrame(self.root, fg_color=COLORS["bg_main"])
         main_frame.pack(fill="both", expand=True)
-        
-        # Logo section
+
         logo_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        logo_frame.pack(pady=(50, 30))
-        
-        # Try to load the app icon
+        logo_frame.pack(pady=(40, 20))
+
+        # App icon
         try:
             from PIL import Image
-            # Try both possible icon files
-            icon_path = None
-            if os.path.exists("app_icon.png"):
-                icon_path = "app_icon.png"
-            elif os.path.exists("icon.jpg.jpeg"):
-                icon_path = "icon.jpg.jpeg"
-            elif os.path.exists("icon.jpg"):
-                icon_path = "icon.jpg"
-            
+            icon_path = next(
+                (p for p in ["app_icon.png", "icon.jpg.jpeg", "icon.jpg"] if os.path.exists(p)),
+                None
+            )
             if icon_path:
-                # Load and resize the icon
-                icon_image = Image.open(icon_path)
-                icon_image = icon_image.resize((80, 80), Image.Resampling.LANCZOS)
-                icon_photo = ctk.CTkImage(light_image=icon_image, dark_image=icon_image, size=(80, 80))
-                
-                ctk.CTkLabel(
-                    logo_frame,
-                    image=icon_photo,
-                    text=""
-                ).pack()
-            else:
-                # Fallback to emoji if no icon found
-                ctk.CTkLabel(
-                    logo_frame,
-                    text="🎓",
-                    font=ctk.CTkFont(size=60)
-                ).pack()
-        except ImportError:
-            # Fallback if PIL is not available
-            ctk.CTkLabel(
-                logo_frame,
-                text="🎓",
-                font=ctk.CTkFont(size=60)
-            ).pack()
+                img = Image.open(icon_path).resize((80, 80), Image.Resampling.LANCZOS)
+                icon_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
+                ctk.CTkLabel(logo_frame, image=icon_photo, text="").pack()
         except Exception:
-            # Fallback for any other error
-            ctk.CTkLabel(
-                logo_frame,
-                text="🎓",
-                font=ctk.CTkFont(size=60)
-            ).pack()
-        
+            pass
+
         ctk.CTkLabel(
-            logo_frame,
-            text="School Management System",
+            logo_frame, text="GFA Admin Panel",
             font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["primary"]
         ).pack(pady=(10, 0))
-        
+
         ctk.CTkLabel(
-            logo_frame,
-            text="Admin Login",
+            logo_frame, text="Admin Login",
             font=ctk.CTkFont(family="Segoe UI", size=14),
             text_color=COLORS["text_secondary"]
-        ).pack(pady=(5, 0))
-        
-        # Login form
+        ).pack(pady=(4, 0))
+
+        # Login form card
         form_frame = ctk.CTkFrame(main_frame, fg_color=COLORS["bg_card"], corner_radius=12)
         form_frame.pack(padx=40, pady=20, fill="x")
-        
-        # Email/Username
-        ctk.CTkLabel(
-            form_frame,
-            text="Email / Username",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
-        ).pack(anchor="w", padx=20, pady=(20, 5))
-        
+
+        ctk.CTkLabel(form_frame, text="Email / Username",
+                     font=ctk.CTkFont(size=13),
+                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(20, 5))
+
         self.username_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text="Enter your email",
-            width=320,
-            height=45,
-            corner_radius=8,
-            font=ctk.CTkFont(family="Segoe UI", size=14)
+            form_frame, placeholder_text="Enter your email",
+            width=320, height=45, corner_radius=8,
+            font=ctk.CTkFont(size=14)
         )
         self.username_entry.pack(padx=20, pady=(0, 15))
-        
-        # Password
-        ctk.CTkLabel(
-            form_frame,
-            text="Password",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
-        ).pack(anchor="w", padx=20, pady=(0, 5))
-        
+
+        ctk.CTkLabel(form_frame, text="Password",
+                     font=ctk.CTkFont(size=13),
+                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(0, 5))
+
         self.password_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text="Enter your password",
-            show="●",
-            width=320,
-            height=45,
-            corner_radius=8,
-            font=ctk.CTkFont(family="Segoe UI", size=14)
+            form_frame, placeholder_text="Enter your password",
+            show="*", width=320, height=45, corner_radius=8,
+            font=ctk.CTkFont(size=14)
         )
         self.password_entry.pack(padx=20, pady=(0, 10))
-        
-        # Error label
+
         self.error_label = ctk.CTkLabel(
-            form_frame,
-            text="",
-            font=ctk.CTkFont(family="Segoe UI", size=12),
+            form_frame, text="",
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["danger"]
         )
-        self.error_label.pack(pady=(0, 10))
-        
-        # Login button
-        self.login_btn = ctk.CTkButton(
-            form_frame,
-            text="Login",
+        self.error_label.pack(pady=(0, 5))
+
+        ctk.CTkButton(
+            form_frame, text="Login",
             command=self.attempt_login,
-            width=320,
-            height=50,
-            corner_radius=8,
+            width=320, height=50, corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold")
-        )
-        self.login_btn.pack(padx=20, pady=(5, 25))
-        
-        # Bind Enter key
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(padx=20, pady=(0, 25))
+
         self.root.bind("<Return>", lambda e: self.attempt_login())
         self.username_entry.focus()
-    
+
     def attempt_login(self):
-        """Verify credentials and log in."""
         username = self.username_entry.get().strip()
         password = self.password_entry.get()
-        
+
         if not username:
             self.error_label.configure(text="Please enter your email/username")
             return
-        
         if not password:
             self.error_label.configure(text="Please enter your password")
             return
-        
-        # Check credentials
+
         admin = self.session.query(Admin).filter_by(username=username, is_active=True).first()
-        
         if not admin:
             self.error_label.configure(text="Invalid email/username")
             return
-        
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        if admin.password_hash != password_hash:
+
+        if admin.password_hash != hashlib.sha256(password.encode()).hexdigest():
             self.error_label.configure(text="Incorrect password")
             return
-        
-        # Success - close login and open main app
+
         self.session.close()
         self.on_success_callback(admin)
 
 
 def start_main_app(root, current_admin):
-    """Start the main application after successful login."""
-    # Clear login window
     for widget in root.winfo_children():
         widget.destroy()
-    
-    # Resize for main app
+
     root.geometry("1200x800")
-    root.title("Enterprise School Management System")
+    root.title("GFA Admin Panel")
     root.resizable(True, True)
-    
-    # Center the window
+
     root.update_idletasks()
     x = (root.winfo_screenwidth() // 2) - 550
     y = (root.winfo_screenheight() // 2) - 400
     root.geometry(f"1100x800+{x}+{y}")
-    
-    # Start main app
-    app = EnterpriseSchoolManagementApp(root, current_admin)
+
+    EnterpriseSchoolManagementApp(root, current_admin)
 
 
 if __name__ == "__main__":
-    # Initialize database
+    run_migrations()
     initialize_subjects()
+    initialize_departments()
     initialize_admin()
-    
-    # Set theme
-    ctk.set_appearance_mode("dark")
+
+    ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
-    
+
     root = ctk.CTk()
-    
-    # Start with login window
-    login = LoginWindow(root, lambda admin: start_main_app(root, admin))
-    
+    LoginWindow(root, lambda admin: start_main_app(root, admin))
     root.mainloop()
