@@ -96,6 +96,11 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         self.session = session
         self.on_student_added_callback = on_student_added_callback
         self._phone_valid = {"phone": True, "guardian_phone": True}
+        
+        # Initialize yy from active session
+        active = self.session.query(AcademicSession).filter_by(is_active=True).first()
+        self.yy = active.name[2:4] if active else "00"
+        
         self.setup_ui()
 
     # ------------------------------------------------------------------ helpers
@@ -110,10 +115,7 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         except Exception:
             self.age_display.configure(text="-- years old")
 
-    def _on_year_change(self, year: int):
-        yy = str(year)[-2:]
-        self.id_prefix_label.configure(text=f"GFA/{yy}/S")
-        self._refresh_id_preview()
+
 
     def _on_session_change(self, session_name: str):
         """Update ID prefix when session selection changes."""
@@ -212,22 +214,11 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         self.session_combo.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
         row += 1
 
-        # Year spinner (for manual override / standalone use)
-        self._label(form_scroll, "Admission Year *", row)
-        current_year = datetime.now().year
-        self.year_spinner = YearSpinner(
-            form_scroll, initial_year=current_year,
-            on_change=self._on_year_change
-        )
-        self.year_spinner.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-        row += 1
-
         # Student ID
         self._label(form_scroll, "Student ID *", row)
         id_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
         id_frame.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-
-        yy = str(current_year)[-2:]
+        yy = self.yy
         self.id_prefix_label = ctk.CTkLabel(
             id_frame, text=f"GFA/{yy}/S",
             font=ctk.CTkFont(size=14, weight="bold"),
