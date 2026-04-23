@@ -19,11 +19,11 @@ COLORS = {
     "success": "#34a853",
     "warning": "#fbbc04",
     "danger": "#ea4335",
-    "bg_dark": "#1e1e2e",
-    "bg_card": "#2a2a3e",
-    "text_primary": "#ffffff",
-    "text_secondary": "#a0a0a0",
-    "border": "#3a3a4e"
+    "bg_dark": "#ffffff",
+    "bg_card": "#f8f9fa",
+    "text_primary": "#202124",
+    "text_secondary": "#5f6368",
+    "border": "#dadce0"
 }
 
 
