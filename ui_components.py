@@ -105,7 +105,6 @@ class ModalController:
         self.overlay.title("Student Details")
         self.overlay.geometry("500x400")
         self.overlay.transient(self.parent_window)
-        self.overlay.grab_set()
         
         # Center the modal
         parent_x = self.parent_window.winfo_rootx()
@@ -117,6 +116,8 @@ class ModalController:
         y = parent_y + (parent_height // 2) - 200
         
         self.overlay.geometry(f"500x400+{x}+{y}")
+        self.overlay.update_idletasks()
+        self.overlay.grab_set()
         self.overlay.configure(fg_color=("#f0f0f0", "#2a2a3e"))
         
         # Get student info
