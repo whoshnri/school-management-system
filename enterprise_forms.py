@@ -1227,7 +1227,7 @@ class EnterpriseSchoolManagementApp:
                 text=text,
                 fg_color="transparent",
                 text_color=COLORS["text_secondary"],
-                hover_color=COLORS["bg_card"],
+                hover_color=COLORS["primary"],
                 anchor="center",
                 font=ctk.CTkFont(family="Segoe UI", size=14),
                 command=lambda n=name: self.select_frame_by_name(n)
@@ -1248,7 +1248,7 @@ class EnterpriseSchoolManagementApp:
             text="Settings",
             fg_color="transparent",
             text_color=COLORS["text_secondary"],
-            hover_color=COLORS["bg_card"],
+            hover_color=COLORS["primary"],
             anchor="center",
             font=ctk.CTkFont(family="Segoe UI", size=14),
             command=lambda: self.select_frame_by_name("Admin Settings")
