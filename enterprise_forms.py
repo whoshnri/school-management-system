@@ -273,15 +273,15 @@ class StudentsListTab(ctk.CTkFrame):
         edit_modal.title(f"Edit Student - {student.student_id}")
         edit_modal.geometry(f"700x{window_height}")
         edit_modal.transient(root_window)
-        edit_modal.grab_set()
         
         # Center the modal
-        edit_modal.update_idletasks()
         x = root_window.winfo_rootx() + (root_window.winfo_width() // 2) - 350
         y = root_window.winfo_rooty() + (root_window.winfo_height() // 2) - (window_height // 2)
         edit_modal.geometry(f"700x{window_height}+{x}+{y}")
         
         edit_modal.configure(fg_color=COLORS["bg_card"])
+        edit_modal.update_idletasks()
+        edit_modal.grab_set()
         
         # Header
         header_frame = ctk.CTkFrame(edit_modal, fg_color=COLORS["primary"], corner_radius=0)

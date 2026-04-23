@@ -126,10 +126,12 @@ class SessionsTab(ctk.CTkFrame):
         dialog.title("New Academic Session")
         dialog.geometry("360x200")
         dialog.resizable(False, False)
+        dialog.configure(fg_color=COLORS["bg_card"])
+        dialog.update_idletasks()
         dialog.grab_set()
 
         ctk.CTkLabel(dialog, text="Session Name (e.g. 2024/2025)",
-                     font=ctk.CTkFont(size=13)).pack(pady=(20, 5))
+                     font=ctk.CTkFont(size=13), text_color=COLORS["text_primary"]).pack(pady=(20, 5))
         entry = ctk.CTkEntry(dialog, width=260, placeholder_text="YYYY/YYYY+1")
         entry.pack(pady=5)
         err = ctk.CTkLabel(dialog, text="", text_color=COLORS["danger"],
