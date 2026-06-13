@@ -1,7 +1,41 @@
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from models import Session, Student, Attendance, Mark, Fee
-from ui_components import TextLabelManager, ModalController
+from fee_receipt_pdf import generate_fee_receipt, is_fee_fully_paid
+from fee_helpers import (
+    CLASS_OPTIONS,
+    TERM_OPTIONS,
+    apply_fee_structure,
+    get_fee_structure,
+    load_fee_structure_matrix,
+    sync_fees_for_scope,
+)
+from validators import validate_email, validate_fee_payment
+from app_paths import find_asset
+from ui_components import (
+    TextLabelManager,
+    ModalController,
+    enable_mousewheel_scrolling,
+    DatePickerField,
+    ModalOptionPicker,
+    NIGERIAN_STATES,
+    MODAL_STYLE,
+    CLASS_FILTER_OPTIONS,
+    center_toplevel,
+    create_modal_header,
+    create_section_header,
+    create_form_entry,
+    create_form_textbox,
+    create_form_combobox,
+    create_form_row,
+    create_modal_footer,
+    input_style,
+    safe_export_filename,
+    close_modal_window,
+    setup_modal_window,
+    ask_save_filename,
+    show_error,
+)
 
 # Modern color palette
 COLORS = {
@@ -16,6 +50,8 @@ COLORS = {
     "text_primary":  "#202124",
     "text_secondary":"#5f6368",
     "border":        "#dadce0",
+    "nav_active_text": "#ffffff",
+    "nav_inactive_text": "#5f6368",
 }
 
 
@@ -57,20 +93,38 @@ class StudentsListTab(ctk.CTkFrame):
         )
         self.count_label.pack(side="left", padx=10, pady=15)
 
-        # Search bar
+        filters_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        filters_frame.pack(side="right", padx=20, pady=15)
+
+        ctk.CTkLabel(
+            filters_frame,
+            text="Class",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
+        self.class_filter_var = ctk.StringVar(value="All Classes")
+        class_filter = ctk.CTkComboBox(
+            filters_frame,
+            variable=self.class_filter_var,
+            values=CLASS_FILTER_OPTIONS,
+            width=130,
+            height=40,
+            command=lambda _value: self.load_students(),
+            **input_style(),
+        )
+        class_filter.pack(side="left", padx=(0, 12))
+
         self.search_var = ctk.StringVar()
         search_entry = ctk.CTkEntry(
-            header_frame,
+            filters_frame,
             placeholder_text="Search by name or ID...",
             textvariable=self.search_var,
-            width=280,
+            width=240,
             height=40,
-            corner_radius=10,
-            border_width=1,
-            border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            **input_style(),
         )
-        search_entry.pack(side="right", padx=20, pady=15)
+        search_entry.pack(side="left")
         self.search_var.trace_add("write", lambda *args: self.load_students())
 
         # Main frame for the list
@@ -95,11 +149,17 @@ class StudentsListTab(ctk.CTkFrame):
         for widget in self.students_list_frame.winfo_children():
             widget.destroy()
 
-        search_term = self.search_var.get().lower() if hasattr(self, 'search_var') else ""
+        search_term = self.search_var.get().lower().strip() if hasattr(self, 'search_var') else ""
+        class_filter = self.class_filter_var.get() if hasattr(self, 'class_filter_var') else "All Classes"
 
         students = self.session.query(Student).order_by(Student.full_name).all()
+        if class_filter and class_filter != "All Classes":
+            students = [s for s in students if s.class_name == class_filter]
         if search_term:
-            students = [s for s in students if search_term in s.name.lower() or search_term in s.student_id.lower()]
+            students = [
+                s for s in students
+                if search_term in s.full_name.lower() or search_term in s.student_id.lower()
+            ]
 
         # Update count
         self.count_label.configure(text=f"{len(students)} student{'s' if len(students) != 1 else ''}")
@@ -109,21 +169,19 @@ class StudentsListTab(ctk.CTkFrame):
             empty_frame = ctk.CTkFrame(self.students_list_frame, fg_color="transparent")
             empty_frame.grid(row=0, column=0, columnspan=5, pady=60)
             
-            ctk.CTkLabel(
-                empty_frame,
-                text="No Data",
-                font=ctk.CTkFont(size=48)
-            ).pack(pady=(0, 10))
-            
-            message = "No students found" if search_term else "No students registered yet"
+            message = (
+                "No students found"
+                if (search_term or class_filter != "All Classes")
+                else "No students registered yet"
+            )
             ctk.CTkLabel(
                 empty_frame,
                 text=message,
-                font=ctk.CTkFont(family="Segoe UI", size=16),
-                text_color=COLORS["text_secondary"]
+                font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                text_color=COLORS["text_primary"],
             ).pack()
             
-            if not search_term:
+            if not search_term and class_filter == "All Classes":
                 ctk.CTkLabel(
                     empty_frame,
                     text="Go to 'Registration' to add students",
@@ -176,7 +234,7 @@ class StudentsListTab(ctk.CTkFrame):
                 self.students_list_frame,
                 text=student.class_name,
                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-                text_color=COLORS["text_primary"],
+                text_color=COLORS["nav_active_text"],
                 fg_color=COLORS["primary"],
                 corner_radius=6,
                 width=65,
@@ -263,177 +321,83 @@ class StudentsListTab(ctk.CTkFrame):
         root_window = self
         while hasattr(root_window, 'master') and root_window.master:
             root_window = root_window.master
-        
-        # Reduce window height to fit screen better
-        screen_height = root_window.winfo_screenheight()
-        window_height = min(700, int(screen_height * 0.85))  # 85% of screen or 700px max
-        
-        # Create edit modal
+
         edit_modal = ctk.CTkToplevel(root_window)
         edit_modal.title(f"Edit Student - {student.student_id}")
-        edit_modal.geometry(f"700x{window_height}")
         edit_modal.transient(root_window)
-        
-        # Center the modal
-        x = root_window.winfo_rootx() + (root_window.winfo_width() // 2) - 350
-        y = root_window.winfo_rooty() + (root_window.winfo_height() // 2) - (window_height // 2)
-        edit_modal.geometry(f"700x{window_height}+{x}+{y}")
-        
-        edit_modal.configure(fg_color=COLORS["bg_card"])
+        edit_modal.configure(fg_color=MODAL_STYLE["bg_main"])
+
+        screen_height = root_window.winfo_screenheight()
+        window_height = min(720, int(screen_height * 0.85))
+        center_toplevel(edit_modal, root_window, 720, window_height)
         edit_modal.update_idletasks()
-        edit_modal.grab_set()
-        
-        # Header
-        header_frame = ctk.CTkFrame(edit_modal, fg_color=COLORS["primary"], corner_radius=0)
-        header_frame.pack(fill="x")
-        
-        ctk.CTkLabel(
-            header_frame,
-            text="Edit Student Details",
-            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(pady=15)
-        
-        # Scrollable form
+        setup_modal_window(edit_modal, on_close=lambda: close_modal_window(edit_modal))
+
+        create_modal_header(
+            edit_modal,
+            "Edit Student Details",
+            subtitle=f"{student.student_id} | {student.full_name}",
+        )
+
         form_scroll = ctk.CTkScrollableFrame(
             edit_modal,
-            fg_color="transparent"
+            fg_color="transparent",
+            scrollbar_button_color=MODAL_STYLE["primary"],
+            scrollbar_button_hover_color=MODAL_STYLE["primary_hover"],
         )
-        form_scroll.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Student ID (read-only)
-        self.create_edit_field(form_scroll, "Student ID", student.student_id, readonly=True)
-        
-        # Personal Information Section
-        self.create_section_header(form_scroll, "Personal Information")
-        
-        full_name_entry = self.create_edit_field(form_scroll, "Full Name *", student.full_name)
-        
-        # Date of Birth
-        from tkcalendar import DateEntry
-        from datetime import datetime
-        dob_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        dob_frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            dob_frame,
-            text="Date of Birth *",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="w"
-        ).pack(side="left", padx=(0, 10))
-        
-        dob_picker = DateEntry(
-            dob_frame,
-            width=20,
-            background='darkblue',
-            foreground='white',
-            borderwidth=2,
-            date_pattern='yyyy-mm-dd',
-            font=('Segoe UI', 11),
-            year=student.date_of_birth.year,
-            month=student.date_of_birth.month,
-            day=student.date_of_birth.day
+        form_scroll.pack(fill="both", expand=True, padx=MODAL_STYLE["padding"], pady=MODAL_STYLE["padding"])
+
+        create_form_entry(form_scroll, "Student ID", student.student_id, readonly=True)
+        create_section_header(form_scroll, "Personal Information")
+        full_name_entry = create_form_entry(form_scroll, "Full Name *", student.full_name)
+
+        dob_picker = create_form_row(
+            form_scroll,
+            "Date of Birth *",
+            widget_factory=lambda frame: DatePickerField(
+                frame,
+                initial_date=student.date_of_birth,
+                width=308,
+                height=MODAL_STYLE["input_height"],
+                font_size=13,
+            ),
         )
-        dob_picker.pack(side="left")
-        
-        # Sex
-        sex_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        sex_frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            sex_frame,
-            text="Sex *",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="w"
-        ).pack(side="left", padx=(0, 10))
-        
+
         sex_var = ctk.StringVar(value=student.sex)
-        sex_combo = ctk.CTkComboBox(
-            sex_frame,
-            variable=sex_var,
-            values=["Male", "Female"],
-            width=300,
-            height=35
-        )
-        sex_combo.pack(side="left")
-        
-        # Class
-        class_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        class_frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            class_frame,
-            text="Class *",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="w"
-        ).pack(side="left", padx=(0, 10))
-        
+        create_form_combobox(form_scroll, "Sex *", ["Male", "Female"], sex_var)
+
         class_var = ctk.StringVar(value=student.class_name)
-        class_combo = ctk.CTkComboBox(
-            class_frame,
-            variable=class_var,
-            values=["SSS1", "SSS2", "SSS3"],
-            width=300,
-            height=35
+        create_form_combobox(form_scroll, "Class *", ["SSS1", "SSS2", "SSS3"], class_var)
+
+        admission_year_entry = create_form_entry(
+            form_scroll, "Admission Year *", str(student.admission_year)
         )
-        class_combo.pack(side="left")
-        
-        # Admission Year
-        admission_year_entry = self.create_edit_field(form_scroll, "Admission Year *", str(student.admission_year))
-        
-        # State of Origin
-        state_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        state_frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            state_frame,
-            text="State of Origin *",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="w"
-        ).pack(side="left", padx=(0, 10))
-        
-        nigerian_states = [
-            "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno",
-            "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "Gombe", "Imo", "Jigawa",
-            "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger",
-            "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara", "FCT"
-        ]
-        
-        state_var = ctk.StringVar(value=student.state_of_origin)
-        state_combo = ctk.CTkComboBox(
-            state_frame,
-            variable=state_var,
-            values=nigerian_states,
-            width=300,
-            height=35
+
+        state_picker = create_form_row(
+            form_scroll,
+            "State of Origin *",
+            widget_factory=lambda frame: ModalOptionPicker(
+                frame,
+                options=NIGERIAN_STATES,
+                title="State of Origin",
+                placeholder="Select state...",
+                width=308,
+                height=MODAL_STYLE["input_height"],
+                font_size=13,
+                initial_value=student.state_of_origin,
+            ),
         )
-        state_combo.pack(side="left")
-        
-        # Contact Information Section
-        self.create_section_header(form_scroll, "Contact Information")
-        
-        home_address_text = self.create_edit_textbox(form_scroll, "Home Address *", student.home_address)
-        phone_entry = self.create_edit_field(form_scroll, "Phone Number", student.phone_number or "")
-        
-        # Guardian Information Section
-        self.create_section_header(form_scroll, "Guardian/Parent Information")
-        
-        guardian_name_entry = self.create_edit_field(form_scroll, "Guardian Name *", student.guardian_name)
-        guardian_phone_entry = self.create_edit_field(form_scroll, "Guardian Phone *", student.guardian_phone)
-        guardian_address_text = self.create_edit_textbox(form_scroll, "Guardian Address *", student.guardian_address)
-        
-        # Buttons
-        btn_frame = ctk.CTkFrame(edit_modal, fg_color="transparent")
-        btn_frame.pack(pady=20)
-        
+
+        create_section_header(form_scroll, "Contact Information")
+        home_address_text = create_form_textbox(form_scroll, "Home Address *", student.home_address)
+        phone_entry = create_form_entry(form_scroll, "Phone Number", student.phone_number or "")
+
+        create_section_header(form_scroll, "Guardian/Parent Information")
+        guardian_name_entry = create_form_entry(form_scroll, "Guardian Name *", student.guardian_name)
+        guardian_phone_entry = create_form_entry(form_scroll, "Guardian Phone *", student.guardian_phone)
+        guardian_address_text = create_form_textbox(
+            form_scroll, "Guardian Address *", student.guardian_address
+        )
         def save_all_changes():
             """Save all edited student information."""
             # Get all values
@@ -442,7 +406,7 @@ class StudentsListTab(ctk.CTkFrame):
             new_sex = sex_var.get()
             new_class = class_var.get()
             new_admission_year = admission_year_entry.get().strip()
-            new_state = state_var.get()
+            new_state = state_picker.get()
             new_home_address = home_address_text.get("1.0", "end-1c").strip()
             new_phone = phone_entry.get().strip()
             new_guardian_name = guardian_name_entry.get().strip()
@@ -451,31 +415,31 @@ class StudentsListTab(ctk.CTkFrame):
             
             # Validation
             if not new_name or len(new_name.split()) < 2:
-                messagebox.showerror("Error", "Please enter a valid full name (at least 2 names)")
+                show_error(edit_modal, "Error", "Please enter a valid full name (at least 2 names)")
                 return
             
             if not new_admission_year.isdigit():
-                messagebox.showerror("Error", "Admission year must be a valid year")
+                show_error(edit_modal, "Error", "Admission year must be a valid year")
                 return
             
             if not new_state:
-                messagebox.showerror("Error", "Please select a state of origin")
+                show_error(edit_modal, "Error", "Please select a state of origin")
                 return
             
             if not new_home_address:
-                messagebox.showerror("Error", "Home address is required")
+                show_error(edit_modal, "Error", "Home address is required")
                 return
             
             if not new_guardian_name:
-                messagebox.showerror("Error", "Guardian name is required")
+                show_error(edit_modal, "Error", "Guardian name is required")
                 return
             
             if not new_guardian_phone:
-                messagebox.showerror("Error", "Guardian phone is required")
+                show_error(edit_modal, "Error", "Guardian phone is required")
                 return
             
             if not new_guardian_address:
-                messagebox.showerror("Error", "Guardian address is required")
+                show_error(edit_modal, "Error", "Guardian address is required")
                 return
             
             try:
@@ -499,110 +463,141 @@ class StudentsListTab(ctk.CTkFrame):
                 student.guardian_address = new_guardian_address
                 
                 self.session.commit()
-                messagebox.showinfo("Success", f"Student '{new_name}' updated successfully!")
-                edit_modal.destroy()
-                self.load_students()
-                if self.on_student_deleted_callback:
-                    self.on_student_deleted_callback()
+
+                def after_save():
+                    self.load_students()
+                    if self.on_student_deleted_callback:
+                        self.on_student_deleted_callback()
+
+                close_modal_window(
+                    edit_modal,
+                    on_after=after_save,
+                    success_message=f"Student '{new_name}' updated successfully!",
+                )
             except Exception as e:
                 self.session.rollback()
-                messagebox.showerror("Error", f"Failed to update student: {str(e)}")
+                show_error(edit_modal, "Error", f"Failed to update student: {str(e)}")
         
-        ctk.CTkButton(
-            btn_frame,
-            text="💾 Save All Changes",
-            command=save_all_changes,
-            width=180,
-            height=45,
-            corner_radius=8,
-            fg_color=COLORS["success"],
-            hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
-        ).pack(side="left", padx=10)
-        
-        ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            command=edit_modal.destroy,
-            width=120,
-            height=45,
-            corner_radius=8,
-            fg_color=COLORS["secondary"],
-            hover_color=COLORS["danger"],
-            font=ctk.CTkFont(family="Segoe UI", size=14)
-        ).pack(side="left", padx=10)
-        
-        # Bind ESC to close
-        edit_modal.bind("<Escape>", lambda e: edit_modal.destroy())
-    
-    def create_section_header(self, parent, text):
-        """Create a section header in the edit form."""
-        ctk.CTkLabel(
-            parent,
-            text=text,
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            text_color=COLORS["primary"],
-            anchor="w"
-        ).pack(fill="x", pady=(15, 10), padx=5)
-    
-    def create_edit_field(self, parent, label, value="", readonly=False):
-        """Create a labeled entry field."""
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            frame,
-            text=label,
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="w"
-        ).pack(side="left", padx=(0, 10))
-        
-        entry = ctk.CTkEntry(
-            frame,
-            width=400,
-            height=35,
-            corner_radius=8,
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+        create_modal_footer(
+            edit_modal,
+            "Save Changes",
+            save_all_changes,
+            lambda: close_modal_window(edit_modal),
         )
-        entry.pack(side="left")
-        
-        if value:
-            entry.insert(0, value)
-        
-        if readonly:
-            entry.configure(state="readonly", fg_color=COLORS["border"])
-        
-        return entry
-    
-    def create_edit_textbox(self, parent, label, value=""):
-        """Create a labeled textbox field."""
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", pady=8)
-        
-        ctk.CTkLabel(
-            frame,
-            text=label,
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-            width=150,
-            anchor="nw"
-        ).pack(side="left", padx=(0, 10), anchor="n")
-        
-        textbox = ctk.CTkTextbox(
-            frame,
-            width=400,
-            height=80,
-            corner_radius=8,
-            font=ctk.CTkFont(family="Segoe UI", size=12)
+
+        edit_modal.bind("<Escape>", lambda e: close_modal_window(edit_modal))
+
+
+class FeeStructureModal(ctk.CTkToplevel):
+    """Edit global fee amounts by class and term."""
+
+    def __init__(self, parent, session, on_saved=None, focus_class=None, focus_term=None):
+        super().__init__(parent)
+        self.session = session
+        self.on_saved = on_saved
+        self.entries = {}
+        self.saved_values = load_fee_structure_matrix(session)
+
+        self.title("Edit Fee Structure")
+        self.transient(parent)
+        self.configure(fg_color=MODAL_STYLE["bg_main"])
+        center_toplevel(self, parent, 620, 420)
+
+        create_modal_header(
+            self,
+            "Edit Fee Structure",
+            subtitle="Set the amount due for each class and term. Changes apply to all students in that class.",
         )
-        textbox.pack(side="left")
-        
-        if value:
-            textbox.insert("1.0", value)
-        
-        return textbox
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=MODAL_STYLE["padding"], pady=(0, 8))
+
+        grid = ctk.CTkFrame(
+            body,
+            fg_color=MODAL_STYLE["bg_card"],
+            corner_radius=MODAL_STYLE["radius"],
+            border_width=1,
+            border_color=MODAL_STYLE["border"],
+        )
+        grid.pack(fill="both", expand=True)
+        grid.grid_columnconfigure(0, weight=2)
+        for col in range(1, 4):
+            grid.grid_columnconfigure(col, weight=1)
+
+        ctk.CTkLabel(grid, text="Class", anchor="w").grid(
+            row=0, column=0, padx=12, pady=(12, 8), sticky="ew"
+        )
+        for col, (_, term_name) in enumerate(TERM_OPTIONS, start=1):
+            ctk.CTkLabel(
+                grid,
+                text=term_name,
+                anchor="center",
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                text_color=MODAL_STYLE["text_secondary"],
+            ).grid(row=0, column=col, padx=8, pady=(12, 8), sticky="ew")
+
+        for row, class_name in enumerate(CLASS_OPTIONS, start=1):
+            ctk.CTkLabel(
+                grid,
+                text=class_name,
+                anchor="w",
+                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                text_color=MODAL_STYLE["text_primary"],
+            ).grid(row=row, column=0, padx=12, pady=8, sticky="ew")
+
+            for col, (term, _) in enumerate(TERM_OPTIONS, start=1):
+                amount = self.saved_values.get((class_name, term), 0)
+                entry = ctk.CTkEntry(
+                    grid,
+                    width=120,
+                    height=MODAL_STYLE["input_height"] - 4,
+                    text_color=MODAL_STYLE["text_primary"],
+                    placeholder_text="0.00",
+                    **input_style(),
+                )
+                entry.grid(row=row, column=col, padx=8, pady=8, sticky="ew")
+                if amount:
+                    entry.insert(0, f"{amount:.2f}")
+                self.entries[(class_name, term)] = entry
+
+                if class_name == focus_class and term == focus_term:
+                    entry.focus_set()
+                    entry.select_range(0, "end")
+
+        create_modal_footer(
+            self,
+            save_text="Save Structure",
+            save_command=self.save,
+            cancel_command=self._close,
+        )
+
+        setup_modal_window(self, on_close=self._close)
+
+    def _close(self):
+        close_modal_window(self)
+
+    def save(self):
+        try:
+            for class_name in CLASS_OPTIONS:
+                for term, _ in TERM_OPTIONS:
+                    raw = self.entries[(class_name, term)].get().strip()
+                    amount = float(raw) if raw else 0.0
+                    if amount < 0:
+                        raise ValueError(f"{class_name} term {term}: amount cannot be negative.")
+                    previous = self.saved_values.get((class_name, term), 0)
+                    if amount != previous:
+                        apply_fee_structure(self.session, class_name, term, amount)
+
+            close_modal_window(
+                self,
+                on_after=self.on_saved,
+                success_message="Fee structure updated and applied to all students.",
+            )
+        except ValueError as exc:
+            show_error(self, "Validation Error", str(exc))
+        except Exception as exc:
+            self.session.rollback()
+            show_error(self, "Error", f"Failed to save fee structure: {exc}")
 
 
 class SchoolFeesTab(ctk.CTkFrame):
@@ -671,6 +666,18 @@ class SchoolFeesTab(ctk.CTkFrame):
 
         ctk.CTkButton(
             filters_frame,
+            text="Edit Fee Structure",
+            command=self.open_fee_structure_modal,
+            width=140,
+            height=36,
+            corner_radius=8,
+            fg_color=COLORS["secondary"],
+            hover_color=COLORS["primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        ).pack(side="left", padx=(12, 0))
+
+        ctk.CTkButton(
+            filters_frame,
             text=TextLabelManager.get_button_text('load') + " Fees",
             command=self.load_fees,
             width=110,
@@ -679,7 +686,15 @@ class SchoolFeesTab(ctk.CTkFrame):
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
-        ).pack(side="left", padx=(20, 0))
+        ).pack(side="left", padx=(12, 0))
+
+        self.structure_summary = ctk.CTkLabel(
+            control_frame,
+            text="",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=COLORS["text_secondary"],
+        )
+        self.structure_summary.pack(side="left", padx=(12, 0), pady=15)
 
         # Fees list
         self.fees_list_frame = ctk.CTkScrollableFrame(
@@ -695,13 +710,39 @@ class SchoolFeesTab(ctk.CTkFrame):
         for i in range(7):
             self.fees_list_frame.grid_columnconfigure(i, weight=1)
 
+    def _selected_scope(self):
+        class_name = self.class_filter.get()
+        term_value = self.term_filter.get()
+        term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
+        return class_name, term
+
+    def open_fee_structure_modal(self):
+        class_name, term = self._selected_scope()
+        root = self.winfo_toplevel()
+        FeeStructureModal(
+            root,
+            self.session,
+            on_saved=self.load_fees,
+            focus_class=class_name,
+            focus_term=term,
+        )
+
     def load_fees(self):
         for widget in self.fees_list_frame.winfo_children():
             widget.destroy()
 
-        class_name = self.class_filter.get()
-        term_value = self.term_filter.get()
-        term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
+        class_name, term = self._selected_scope()
+        sync_fees_for_scope(self.session, class_name, term)
+
+        structure = get_fee_structure(self.session, class_name, term)
+        if structure and structure.amount_due > 0:
+            self.structure_summary.configure(
+                text=f"Fee due for {class_name} · {TERM_OPTIONS[term - 1][1]}: ₦{structure.amount_due:,.2f}"
+            )
+        else:
+            self.structure_summary.configure(
+                text=f"No fee structure set for {class_name} · {TERM_OPTIONS[term - 1][1]}. Click Edit Fee Structure."
+            )
 
         students = self.session.query(Student).filter_by(class_name=class_name).order_by(Student.full_name).all()
 
@@ -724,7 +765,7 @@ class SchoolFeesTab(ctk.CTkFrame):
             ).pack()
             return
 
-        headers = ["Student", "Amount Due", "Set Due", "Amount Paid", "Balance", "Status", "Update Payment"]
+        headers = ["Student", "Amount Due", "Amount Paid", "Balance", "Status", "Update Payment", "Receipt"]
         for col, header in enumerate(headers):
             ctk.CTkLabel(
                 self.fees_list_frame,
@@ -741,7 +782,7 @@ class SchoolFeesTab(ctk.CTkFrame):
                 self.session.commit()
 
             balance = fee.amount_due - fee.amount_paid
-            is_paid = balance <= 0
+            is_paid = is_fee_fully_paid(fee)
             status_text = TextLabelManager.get_status_text('paid') if is_paid else (TextLabelManager.get_status_text('partial') if fee.amount_paid > 0 else TextLabelManager.get_status_text('unpaid'))
             status_color = COLORS["success"] if is_paid else (COLORS["warning"] if fee.amount_paid > 0 else COLORS["danger"])
 
@@ -761,41 +802,13 @@ class SchoolFeesTab(ctk.CTkFrame):
                 text_color=COLORS["text_primary"]
             ).grid(row=i, column=1, padx=10, pady=12, sticky="w")
 
-            # Set Due Amount Entry + Button
-            due_frame = ctk.CTkFrame(self.fees_list_frame, fg_color="transparent")
-            due_frame.grid(row=i, column=2, padx=5, pady=12, sticky="w")
-
-            due_entry = ctk.CTkEntry(
-                due_frame,
-                placeholder_text="Set due",
-                width=80,
-                height=32,
-                corner_radius=6,
-                border_width=1,
-                border_color=COLORS["border"],
-                font=ctk.CTkFont(family="Segoe UI", size=12)
-            )
-            due_entry.pack(side="left", padx=2)
-
-            ctk.CTkButton(
-                due_frame,
-                text=TextLabelManager.get_button_text('set'),
-                command=lambda s=student.id, t=term, e=due_entry: self.set_due_amount(s, t, e.get()),
-                width=40,
-                height=32,
-                corner_radius=6,
-                fg_color=COLORS["secondary"],
-                hover_color=COLORS["primary"],
-                font=ctk.CTkFont(family="Segoe UI", size=11)
-            ).pack(side="left", padx=2)
-
             # Amount Paid
             ctk.CTkLabel(
                 self.fees_list_frame,
                 text=f"₦{fee.amount_paid:,.2f}",
                 font=ctk.CTkFont(family="Segoe UI", size=13),
                 text_color=COLORS["success"] if fee.amount_paid > 0 else COLORS["text_secondary"]
-            ).grid(row=i, column=3, padx=10, pady=12, sticky="w")
+            ).grid(row=i, column=2, padx=10, pady=12, sticky="w")
 
             # Balance
             ctk.CTkLabel(
@@ -803,7 +816,7 @@ class SchoolFeesTab(ctk.CTkFrame):
                 text=f"₦{balance:,.2f}",
                 font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
                 text_color=COLORS["danger"] if balance > 0 else COLORS["success"]
-            ).grid(row=i, column=4, padx=10, pady=12, sticky="w")
+            ).grid(row=i, column=3, padx=10, pady=12, sticky="w")
 
             # Status
             ctk.CTkLabel(
@@ -811,11 +824,11 @@ class SchoolFeesTab(ctk.CTkFrame):
                 text=status_text,
                 font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
                 text_color=status_color
-            ).grid(row=i, column=5, padx=10, pady=12, sticky="w")
+            ).grid(row=i, column=4, padx=10, pady=12, sticky="w")
 
             # Update Payment Entry + Button
             payment_frame = ctk.CTkFrame(self.fees_list_frame, fg_color="transparent")
-            payment_frame.grid(row=i, column=6, padx=5, pady=12, sticky="w")
+            payment_frame.grid(row=i, column=5, padx=5, pady=12, sticky="w")
 
             entry = ctk.CTkEntry(
                 payment_frame,
@@ -841,39 +854,66 @@ class SchoolFeesTab(ctk.CTkFrame):
                 font=ctk.CTkFont(family="Segoe UI", size=12)
             ).pack(side="left", padx=2)
 
-    def set_due_amount(self, student_id, term, amount_str):
+            receipt_state = "normal" if is_paid else "disabled"
+            ctk.CTkButton(
+                self.fees_list_frame,
+                text="Receipt",
+                command=lambda s=student, t=term: self.download_receipt(s, t),
+                width=88,
+                height=32,
+                corner_radius=6,
+                fg_color=COLORS["primary"] if is_paid else COLORS["border"],
+                hover_color=COLORS["primary_hover"] if is_paid else COLORS["border"],
+                text_color=COLORS["nav_active_text"] if is_paid else COLORS["text_secondary"],
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                state=receipt_state,
+            ).grid(row=i, column=6, padx=10, pady=12, sticky="w")
+
+    def update_fee(self, student_id, term, amount_str):
         try:
-            amount = float(amount_str)
-            if amount < 0:
-                messagebox.showerror("Error", "Amount cannot be negative.")
-                return
             fee = self.session.query(Fee).filter_by(student_id=student_id, term=term).one()
-            fee.amount_due = amount
+            amount, error = validate_fee_payment(amount_str, fee.amount_due, fee.amount_paid)
+            if error:
+                messagebox.showerror("Invalid Payment", error)
+                return
+
+            fee.amount_paid += amount
             self.session.commit()
-            messagebox.showinfo("Success", "Fee amount due updated successfully.")
+            messagebox.showinfo("Success", f"Payment of ₦{amount:,.2f} recorded successfully.")
             self.load_fees()
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount.")
         except Exception as e:
             self.session.rollback()
             messagebox.showerror("Error", f"An error occurred: {e}")
 
-    def update_fee(self, student_id, term, amount_str):
-        try:
-            amount = float(amount_str)
-            if amount < 0:
-                messagebox.showerror("Error", "Amount cannot be negative.")
-                return
-            fee = self.session.query(Fee).filter_by(student_id=student_id, term=term).one()
-            fee.amount_paid += amount  # Add to existing paid amount
-            self.session.commit()
-            messagebox.showinfo("Success", f"Payment of ₦{amount:,.2f} recorded successfully.")
-            self.load_fees()
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid amount.")
-        except Exception as e:
-            self.session.rollback()
-            messagebox.showerror("Error", f"An error occurred: {e}")
+    def download_receipt(self, student, term):
+        fee = self.session.query(Fee).filter_by(student_id=student.id, term=term).first()
+        if not is_fee_fully_paid(fee):
+            messagebox.showwarning(
+                "Not Paid",
+                "Receipts are only available when the fee has been paid in full.",
+            )
+            return
+
+        term_names = {1: "term1", 2: "term2", 3: "term3"}
+        filename = ask_save_filename(
+            self,
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf")],
+            initialfile=safe_export_filename(
+                student.full_name,
+                term_names.get(term, f"term{term}"),
+                "fees_receipt",
+                extension="pdf",
+            ),
+            title="Save Payment Receipt",
+        )
+        if not filename:
+            return
+
+        if generate_fee_receipt(student.id, term, filename):
+            messagebox.showinfo("Success", f"Payment receipt saved to:\n{filename}")
+        else:
+            messagebox.showerror("Error", "Failed to generate payment receipt.")
 
 
 class AdminSettingsTab(ctk.CTkFrame):
@@ -971,7 +1011,7 @@ class AdminSettingsTab(ctk.CTkFrame):
             text_color=COLORS["text_secondary"]
         ).pack(anchor="w", padx=30, pady=(0, 20))
         
-        self.reg_username = self.create_field(register_frame, "New Username:", placeholder="Enter email/username")
+        self.reg_username = self.create_field(register_frame, "New Username:", placeholder="name@school.com")
         self.reg_password = self.create_field(register_frame, "Password:", placeholder="Enter password", is_password=True)
         self.reg_confirm = self.create_field(register_frame, "Confirm Password:", placeholder="Confirm password", is_password=True)
         
@@ -1083,6 +1123,11 @@ class AdminSettingsTab(ctk.CTkFrame):
         if not username or not password or not confirm:
             messagebox.showerror("Error", "All fields are required.")
             return
+
+        ok, email_error = validate_email(username)
+        if not ok:
+            messagebox.showerror("Error", email_error)
+            return
         
         if password != confirm:
             messagebox.showerror("Error", "Passwords do not match.")
@@ -1138,145 +1183,172 @@ class EnterpriseSchoolManagementApp:
 
         self.setup_sidebar()
         self.setup_main_frames()
+        enable_mousewheel_scrolling(self.root)
 
         # Select default frame
         self.select_frame_by_name("Student Registration")
 
     def setup_sidebar(self):
-        self.navigation_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color=COLORS["bg_dark"], width=220)
+        self.navigation_frame = ctk.CTkFrame(
+            self.root, corner_radius=0, fg_color=COLORS["bg_dark"], width=220
+        )
         self.navigation_frame.grid(row=0, column=0, sticky="nsew")
-        self.navigation_frame.grid_propagate(False)  # Fix sidebar width
-        self.navigation_frame.grid_rowconfigure(11, weight=1)  # Updated for Settings row
+        self.navigation_frame.grid_propagate(False)
+        self.navigation_frame.grid_columnconfigure(0, weight=1)
+        self.navigation_frame.grid_rowconfigure(1, weight=1)
 
-        # Logo/Title
+        # Logo / title — centered
         logo_frame = ctk.CTkFrame(self.navigation_frame, fg_color="transparent")
-        logo_frame.grid(row=0, column=0, padx=15, pady=(25, 35), sticky="ew")
+        logo_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(28, 24))
 
-        # Try to load the app icon
+        logo_inner = ctk.CTkFrame(logo_frame, fg_color="transparent")
+        logo_inner.pack(anchor="center")
+
         try:
             import os
             from PIL import Image
-            # Try both possible icon files
-            icon_path = None
-            if os.path.exists("app_icon.png"):
-                icon_path = "app_icon.png"
-            elif os.path.exists("icon.jpg.jpeg"):
-                icon_path = "icon.jpg.jpeg"
-            elif os.path.exists("icon.jpg"):
-                icon_path = "icon.jpg"
-            
+            icon_path = find_asset(("app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
             if icon_path:
-                # Load and resize the icon for sidebar
-                icon_image = Image.open(icon_path)
-                icon_image = icon_image.resize((40, 40), Image.Resampling.LANCZOS)
-                icon_photo = ctk.CTkImage(light_image=icon_image, dark_image=icon_image, size=(40, 40))
-                
-                ctk.CTkLabel(
-                    logo_frame,
-                    image=icon_photo,
-                    text=""
-                ).pack(side="left", padx=(0, 12))
+                icon_image = Image.open(icon_path).resize((40, 40), Image.Resampling.LANCZOS)
+                icon_photo = ctk.CTkImage(
+                    light_image=icon_image, dark_image=icon_image, size=(40, 40)
+                )
+                ctk.CTkLabel(logo_inner, image=icon_photo, text="").pack()
             else:
-                # Fallback to text if no icon found
                 ctk.CTkLabel(
-                    logo_frame,
-                    text="SMS",
-                    font=ctk.CTkFont(size=36, weight="bold")
-                ).pack(side="left")
-        except ImportError:
-            # Fallback if PIL is not available
-            ctk.CTkLabel(
-                logo_frame,
-                text="SMS",
-                font=ctk.CTkFont(size=36, weight="bold")
-            ).pack(side="left")
+                    logo_inner, text="SMS",
+                    font=ctk.CTkFont(size=28, weight="bold"),
+                    text_color=COLORS["primary"],
+                ).pack()
         except Exception:
-            # Fallback for any other error
             ctk.CTkLabel(
-                logo_frame,
-                text="SMS",
-                font=ctk.CTkFont(size=36, weight="bold")
-            ).pack(side="left")
+                logo_inner, text="SMS",
+                font=ctk.CTkFont(size=28, weight="bold"),
+                text_color=COLORS["primary"],
+            ).pack()
 
         ctk.CTkLabel(
-            logo_frame,
+            logo_inner,
             text="GFA Admin Panel",
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=12)
+            font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(pady=(10, 0))
 
-        # Navigation buttons with consistent text labels
+        # Nav buttons — scroll when the window is too short for every item
+        nav_scroll = ctk.CTkScrollableFrame(
+            self.navigation_frame,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS["primary"],
+            scrollbar_button_hover_color=COLORS["primary_hover"],
+        )
+        nav_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        nav_scroll.grid_columnconfigure(0, weight=1)
+
         nav_items = [
-            (TextLabelManager.get_nav_text('register'), "Student Registration", 1),
-            (TextLabelManager.get_nav_text('students'), "Students List", 2),
-            (TextLabelManager.get_nav_text('fees'), "School Fees", 3),
-            (TextLabelManager.get_nav_text('marks'), "Grades Entry", 4),
-            (TextLabelManager.get_nav_text('broadsheet'), "Broadsheet", 5),
-            (TextLabelManager.get_nav_text('attendance'), "Attendance", 6),
-            ("Sessions", "Sessions", 7),
-            ("Departments", "Departments", 8),
+            (TextLabelManager.get_nav_text('register'), "Student Registration"),
+            (TextLabelManager.get_nav_text('students'), "Students List"),
+            (TextLabelManager.get_nav_text('fees'), "School Fees"),
+            (TextLabelManager.get_nav_text('marks'), "Grades Entry"),
+            (TextLabelManager.get_nav_text('broadsheet'), "Broadsheet"),
+            (TextLabelManager.get_nav_text('attendance'), "Attendance"),
+            (TextLabelManager.get_nav_text('report_cards'), "Report Cards"),
+            ("Sessions", "Sessions"),
+            ("Departments", "Departments"),
         ]
 
         self.nav_buttons = {}
-        for text, name, row in nav_items:
-            btn = ctk.CTkButton(
-                self.navigation_frame,
-                corner_radius=8,
-                height=46,
-                border_spacing=14,
-                text=text,
-                fg_color="transparent",
-                text_color=COLORS["text_secondary"],
-                hover_color=COLORS["primary"],
-                anchor="center",
-                font=ctk.CTkFont(family="Segoe UI", size=14),
-                command=lambda n=name: self.select_frame_by_name(n)
-            )
-            btn.grid(row=row, column=0, sticky="ew", padx=10, pady=3)
+        for row, (text, name) in enumerate(nav_items):
+            btn = self._create_nav_button(nav_scroll, text, name)
+            btn.grid(row=row, column=0, sticky="ew", pady=3)
             self.nav_buttons[name] = btn
 
-        # Separator before settings
-        separator = ctk.CTkFrame(self.navigation_frame, fg_color=COLORS["border"], height=1)
-        separator.grid(row=9, column=0, sticky="ew", padx=20, pady=20)
-        
-        # Settings button
-        settings_btn = ctk.CTkButton(
-            self.navigation_frame,
-            corner_radius=8,
-            height=46,
-            border_spacing=14,
-            text="Settings",
-            fg_color="transparent",
-            text_color=COLORS["text_secondary"],
-            hover_color=COLORS["primary"],
-            anchor="center",
-            font=ctk.CTkFont(family="Segoe UI", size=14),
-            command=lambda: self.select_frame_by_name("Admin Settings")
+        # Bottom section — settings + logout
+        bottom_frame = ctk.CTkFrame(self.navigation_frame, fg_color="transparent")
+        bottom_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 20))
+        bottom_frame.grid_columnconfigure(0, weight=1)
+
+        separator = ctk.CTkFrame(bottom_frame, fg_color=COLORS["border"], height=1)
+        separator.grid(row=0, column=0, sticky="ew", pady=(0, 16))
+
+        settings_btn = self._create_nav_button(
+            bottom_frame, "Settings", "Admin Settings"
         )
-        settings_btn.grid(row=10, column=0, sticky="ew", padx=10, pady=3)
+        settings_btn.grid(row=1, column=0, sticky="ew", pady=3)
         self.nav_buttons["Admin Settings"] = settings_btn
-        
-        # Logout button
+
         logout_btn = ctk.CTkButton(
-            self.navigation_frame,
+            bottom_frame,
             corner_radius=8,
             height=46,
-            border_spacing=14,
             text="Logout",
             fg_color=COLORS["danger"],
-            text_color=COLORS["text_primary"],
+            text_color=COLORS["nav_active_text"],
             hover_color="#c9302c",
             anchor="center",
             font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            command=self.logout
+            command=self.logout,
         )
-        logout_btn.grid(row=11, column=0, sticky="ew", padx=10, pady=(10, 3))
+        logout_btn.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+
+    def _create_nav_button(self, parent, text, frame_name):
+        btn = ctk.CTkButton(
+            parent,
+            corner_radius=8,
+            height=46,
+            text=text,
+            fg_color=COLORS["bg_dark"],
+            text_color=COLORS["nav_inactive_text"],
+            hover_color=COLORS["primary"],
+            anchor="center",
+            font=ctk.CTkFont(family="Segoe UI", size=14),
+            command=lambda n=frame_name: self.select_frame_by_name(n),
+        )
+        btn._nav_active = False
+
+        def on_enter(_event):
+            if not btn._nav_active:
+                btn.configure(
+                    fg_color=COLORS["primary"],
+                    text_color=COLORS["nav_active_text"],
+                )
+
+        def on_leave(_event):
+            if btn._nav_active:
+                btn.configure(
+                    fg_color=COLORS["primary"],
+                    text_color=COLORS["nav_active_text"],
+                )
+            else:
+                btn.configure(
+                    fg_color=COLORS["bg_dark"],
+                    text_color=COLORS["nav_inactive_text"],
+                )
+
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        return btn
+
+    def _set_nav_button_active(self, btn, active):
+        btn._nav_active = active
+        if active:
+            btn.configure(
+                fg_color=COLORS["primary"],
+                text_color=COLORS["nav_active_text"],
+                hover_color=COLORS["primary_hover"],
+            )
+        else:
+            btn.configure(
+                fg_color=COLORS["bg_dark"],
+                text_color=COLORS["nav_inactive_text"],
+                hover_color=COLORS["primary"],
+            )
 
     def setup_main_frames(self):
         from forms import MarksEntryTab, BroadsheetTab, AttendanceTab
         from enhanced_registration import EnhancedStudentRegistrationTab
         from sessions_tab import SessionsTab
         from departments_tab import DepartmentsTab
+        from report_cards_tab import ReportCardsTab
 
         self.students_list_frame = StudentsListTab(self.root, self.session, on_student_deleted_callback=self.refresh_data)
         self.school_fees_frame = SchoolFeesTab(self.root, self.session)
@@ -1284,17 +1356,14 @@ class EnterpriseSchoolManagementApp:
         self.marks_frame = MarksEntryTab(self.root, self.session)
         self.broadsheet_frame = BroadsheetTab(self.root, self.session)
         self.attendance_frame = AttendanceTab(self.root, self.session)
+        self.report_cards_frame = ReportCardsTab(self.root, self.session)
         self.admin_settings_frame = AdminSettingsTab(self.root, self.session, self.current_admin)
         self.sessions_frame = SessionsTab(self.root)
         self.departments_frame = DepartmentsTab(self.root)
 
     def select_frame_by_name(self, name):
-        # Update button styles
         for btn_name, btn in self.nav_buttons.items():
-            if btn_name == name:
-                btn.configure(fg_color=COLORS["primary"], text_color=COLORS["text_primary"])
-            else:
-                btn.configure(fg_color="transparent", text_color=COLORS["text_secondary"])
+            self._set_nav_button_active(btn, btn_name == name)
 
         # Frame mapping
         frames = {
@@ -1304,6 +1373,7 @@ class EnterpriseSchoolManagementApp:
             "Grades Entry": self.marks_frame,
             "Broadsheet": self.broadsheet_frame,
             "Attendance": self.attendance_frame,
+            "Report Cards": self.report_cards_frame,
             "Admin Settings": self.admin_settings_frame,
             "Sessions": self.sessions_frame,
             "Departments": self.departments_frame,
@@ -1319,6 +1389,8 @@ class EnterpriseSchoolManagementApp:
     def refresh_data(self):
         self.marks_frame.load_students()
         self.students_list_frame.load_students()
+        if hasattr(self, "report_cards_frame"):
+            self.report_cards_frame.load_students()
     
     def logout(self):
         """Logout and return to login screen."""

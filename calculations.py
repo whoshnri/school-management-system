@@ -17,6 +17,28 @@ class GradeCalculator:
             if min_score <= score <= max_score:
                 return grade
         return 'F'
+
+    @staticmethod
+    def get_remark(score):
+        if score >= 75:
+            return "Excellent"
+        if score >= 65:
+            return "Very Good"
+        if score >= 50:
+            return "Good"
+        if score >= 40:
+            return "Fair"
+        return "Needs Improvement"
+
+    @staticmethod
+    def grading_legend_rows():
+        return [
+            ("A", "80 – 100", "Excellent"),
+            ("B", "70 – 79", "Very Good"),
+            ("C", "60 – 69", "Good"),
+            ("D", "50 – 59", "Fair"),
+            ("F", "0 – 49", "Needs Improvement"),
+        ]
     
     @staticmethod
     def calculate_cumulative_average(student_id, current_term):

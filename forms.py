@@ -6,14 +6,14 @@ from models import Session, Student, Subject, Mark, Attendance
 from calculations import GradeCalculator
 from datetime import date as dt_date
 import csv
-from ui_components import TextLabelManager
-from tkcalendar import DateEntry
+from ui_components import TextLabelManager, DatePickerField, MODAL_STYLE, input_style, safe_export_filename
 
 # Modern color palette (matching enterprise_forms.py)
 COLORS = {
     "primary": "#1a73e8",
     "primary_hover": "#1557b0",
     "secondary": "#5f6368",
+    "secondary_hover": "#4a4f54",
     "success": "#34a853",
     "warning": "#fbbc04",
     "danger": "#ea4335",
@@ -21,7 +21,11 @@ COLORS = {
     "bg_card": "#f8f9fa",
     "text_primary": "#202124",
     "text_secondary": "#5f6368",
-    "border": "#dadce0"
+    "border": "#dadce0",
+    "sheet_header": "#eef2f7",
+    "sheet_row": "#ffffff",
+    "sheet_row_alt": "#f8f9fa",
+    "text_on_primary": "#ffffff",
 }
 
 
@@ -268,7 +272,8 @@ class MarksEntryTab(ctk.CTkFrame):
             width=300,
             height=40,
             corner_radius=8,
-            fg_color=COLORS["border"],
+            fg_color=COLORS["sheet_row"],
+            text_color=COLORS["text_primary"],
             button_color=COLORS["primary"],
             button_hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=13),
@@ -291,7 +296,8 @@ class MarksEntryTab(ctk.CTkFrame):
             width=150,
             height=40,
             corner_radius=8,
-            fg_color=COLORS["border"],
+            fg_color=COLORS["sheet_row"],
+            text_color=COLORS["text_primary"],
             button_color=COLORS["primary"],
             button_hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=13),
@@ -367,41 +373,68 @@ class MarksEntryTab(ctk.CTkFrame):
         ).pack(side="left", padx=10)
 
     def increment_mark(self, var, max_value):
-        """Increment mark value with validation."""
+        """Increment mark value without exceeding the maximum."""
         try:
-            current = int(var.get() or 0)
+            current = int(float(var.get() or 0))
             if current < max_value:
                 var.set(str(current + 1))
         except ValueError:
-            var.set("1")
+            var.set("0")
     
     def decrement_mark(self, var, min_value):
-        """Decrement mark value with validation."""
+        """Decrement mark value without going below the minimum."""
         try:
-            current = int(var.get() or 0)
+            current = int(float(var.get() or 0))
             if current > min_value:
                 var.set(str(current - 1))
         except ValueError:
             var.set(str(min_value))
 
-    def validate_mark_input(self, var, max_value):
-        """Validate mark input to ensure it's within range."""
-        try:
-            value = var.get().strip()
-            if value == "":
-                return True  # Allow empty
-            
-            mark = float(value)
-            if mark < 0:
-                var.set("0")
-            elif mark > max_value:
-                var.set(str(max_value))
+    def _is_mark_value_valid(self, value_str, max_value):
+        value = value_str.strip()
+        if value == "":
             return True
+        try:
+            mark = float(value)
         except ValueError:
-            # Remove invalid characters
-            valid_chars = ''.join(c for c in var.get() if c.isdigit() or c == '.')
-            var.set(valid_chars)
             return False
+        return 0 <= mark <= max_value
+
+    def validate_mark_input(self, var, entry, error_label, max_value):
+        """Validate mark input and show inline errors instead of clamping values."""
+        value = var.get().strip()
+        normal_border = COLORS["border"]
+        error_border = COLORS["danger"]
+
+        if value == "":
+            entry.configure(border_color=normal_border)
+            error_label.configure(text="")
+            return True
+
+        try:
+            mark = float(value)
+        except ValueError:
+            entry.configure(border_color=error_border)
+            error_label.configure(text="Enter a valid number")
+            return False
+
+        if mark < 0:
+            entry.configure(border_color=error_border)
+            error_label.configure(text="Minimum is 0")
+            return False
+
+        if mark > max_value:
+            entry.configure(border_color=error_border)
+            error_label.configure(text=f"Maximum is {max_value}")
+            return False
+
+        entry.configure(border_color=normal_border)
+        error_label.configure(text="")
+        return True
+
+    def _on_mark_change(self, var, entry, error_label, max_value, subject_id):
+        self.validate_mark_input(var, entry, error_label, max_value)
+        self.recalc(subject_id)
 
     def on_student_change(self, value):
         self.load_existing_marks()
@@ -439,9 +472,12 @@ class MarksEntryTab(ctk.CTkFrame):
                 text_color=COLORS["text_primary"]
             ).grid(row=i, column=0, sticky="ew", padx=15, pady=10)
 
-            ca_var = tk.StringVar(value="30")  # Default to max value
-            ca_frame = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
-            ca_frame.grid(row=i, column=1, padx=10, pady=10)
+            ca_var = tk.StringVar(value="")
+            ca_cell = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
+            ca_cell.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+            ca_frame = ctk.CTkFrame(ca_cell, fg_color="transparent")
+            ca_frame.pack(anchor="w")
             
             ca_entry = ctk.CTkEntry(
                 ca_frame,
@@ -457,10 +493,6 @@ class MarksEntryTab(ctk.CTkFrame):
             )
             ca_entry.pack(side="left", padx=2)
             
-            # Add validation for CA (0-30)
-            ca_var.trace_add('write', lambda *args, v=ca_var: self.validate_mark_input(v, 30))
-            
-            # CA increment/decrement buttons
             ca_btn_frame = ctk.CTkFrame(ca_frame, fg_color="transparent")
             ca_btn_frame.pack(side="left", padx=2)
             
@@ -488,9 +520,21 @@ class MarksEntryTab(ctk.CTkFrame):
                 command=lambda v=ca_var: self.decrement_mark(v, 0)
             ).pack(pady=1)
 
-            exam_var = tk.StringVar(value="70")  # Default to max value
-            exam_frame = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
-            exam_frame.grid(row=i, column=2, padx=10, pady=10)
+            ca_error_label = ctk.CTkLabel(
+                ca_cell,
+                text="",
+                font=ctk.CTkFont(family="Segoe UI", size=11),
+                text_color=COLORS["danger"],
+                anchor="w",
+            )
+            ca_error_label.pack(anchor="w", pady=(2, 0))
+
+            exam_var = tk.StringVar(value="")
+            exam_cell = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
+            exam_cell.grid(row=i, column=2, padx=10, pady=5, sticky="w")
+
+            exam_frame = ctk.CTkFrame(exam_cell, fg_color="transparent")
+            exam_frame.pack(anchor="w")
             
             exam_entry = ctk.CTkEntry(
                 exam_frame,
@@ -505,10 +549,6 @@ class MarksEntryTab(ctk.CTkFrame):
             )
             exam_entry.pack(side="left", padx=2)
             
-            # Add validation for Exam (0-70)
-            exam_var.trace_add('write', lambda *args, v=exam_var: self.validate_mark_input(v, 70))
-            
-            # Exam increment/decrement buttons
             exam_btn_frame = ctk.CTkFrame(exam_frame, fg_color="transparent")
             exam_btn_frame.pack(side="left", padx=2)
             
@@ -536,6 +576,15 @@ class MarksEntryTab(ctk.CTkFrame):
                 command=lambda v=exam_var: self.decrement_mark(v, 0)
             ).pack(pady=1)
 
+            exam_error_label = ctk.CTkLabel(
+                exam_cell,
+                text="",
+                font=ctk.CTkFont(family="Segoe UI", size=11),
+                text_color=COLORS["danger"],
+                anchor="w",
+            )
+            exam_error_label.pack(anchor="w", pady=(2, 0))
+
             total_lbl = ctk.CTkLabel(
                 self.marks_frame,
                 text="0",
@@ -555,12 +604,29 @@ class MarksEntryTab(ctk.CTkFrame):
             grade_lbl.grid(row=i, column=4, padx=10, pady=10)
 
             self.entries[sub.id] = {
-                'ca': ca_var, 'exam': exam_var,
-                'total': total_lbl, 'grade': grade_lbl
+                'ca': ca_var,
+                'exam': exam_var,
+                'ca_entry': ca_entry,
+                'exam_entry': exam_entry,
+                'ca_error': ca_error_label,
+                'exam_error': exam_error_label,
+                'total': total_lbl,
+                'grade': grade_lbl,
             }
 
-            ca_var.trace_add('write', lambda *args, s=sub: self.recalc(s.id))
-            exam_var.trace_add('write', lambda *args, s=sub: self.recalc(s.id))
+            ca_var.trace_add(
+                'write',
+                lambda *args, v=ca_var, e=ca_entry, el=ca_error_label, s=sub: self._on_mark_change(
+                    v, e, el, 30, s.id
+                ),
+            )
+            exam_var.trace_add(
+                'write',
+                lambda *args, v=exam_var, e=exam_entry, el=exam_error_label, s=sub: self._on_mark_change(
+                    v, e, el, 70, s.id
+                ),
+            )
+            self.recalc(sub.id)
 
     def load_existing_marks(self):
         """Load existing marks for the selected student and term"""
@@ -601,32 +667,28 @@ class MarksEntryTab(ctk.CTkFrame):
 
     def recalc(self, subject_id):
         widgets = self.entries[subject_id]
-        try:
-            ca_str = widgets['ca'].get().strip()
-            exam_str = widgets['exam'].get().strip()
+        ca_str = widgets['ca'].get().strip()
+        exam_str = widgets['exam'].get().strip()
 
+        if not self._is_mark_value_valid(ca_str, 30) or not self._is_mark_value_valid(exam_str, 70):
+            widgets['total'].configure(text="-")
+            widgets['grade'].configure(text="-", text_color=COLORS["text_secondary"])
+            return
+
+        try:
             ca = float(ca_str) if ca_str else 0
             exam = float(exam_str) if exam_str else 0
-
-            # Validation
-            if ca > 30:
-                ca = 30
-            if exam > 70:
-                exam = 70
-            if ca < 0:
-                ca = 0
-            if exam < 0:
-                exam = 0
-
             total = ca + exam
 
             widgets['total'].configure(text=f"{total:.0f}")
             grade = GradeCalculator.calculate_grade(total)
 
-            grade_color = COLORS["success"] if grade in ['A', 'B'] else (COLORS["warning"] if grade in ['C', 'D'] else COLORS["danger"])
+            grade_color = COLORS["success"] if grade in ['A', 'B'] else (
+                COLORS["warning"] if grade in ['C', 'D'] else COLORS["danger"]
+            )
             widgets['grade'].configure(text=grade, text_color=grade_color)
         except ValueError:
-            widgets['total'].configure(text="0")
+            widgets['total'].configure(text="-")
             widgets['grade'].configure(text="-", text_color=COLORS["text_secondary"])
 
     def save_marks(self):
@@ -644,18 +706,31 @@ class MarksEntryTab(ctk.CTkFrame):
             term_value = self.term_var.get()
             term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
             saved_count = 0
+            has_errors = False
+
+            for sub in self.subjects:
+                widgets = self.entries[sub.id]
+                if not self.validate_mark_input(widgets['ca'], widgets['ca_entry'], widgets['ca_error'], 30):
+                    has_errors = True
+                if not self.validate_mark_input(widgets['exam'], widgets['exam_entry'], widgets['exam_error'], 70):
+                    has_errors = True
+
+            if has_errors:
+                messagebox.showwarning(
+                    "Invalid Marks",
+                    "Please fix the highlighted errors before saving.",
+                )
+                return
 
             for sub in self.subjects:
                 widgets = self.entries[sub.id]
                 try:
                     ca = float(widgets['ca'].get() or 0)
-                    ca = min(max(ca, 0), 30)  # Clamp 0-30
                 except ValueError:
                     ca = 0.0
 
                 try:
                     exam = float(widgets['exam'].get() or 0)
-                    exam = min(max(exam, 0), 70)  # Clamp 0-70
                 except ValueError:
                     exam = 0.0
 
@@ -723,10 +798,7 @@ class BroadsheetTab(ctk.CTkFrame):
             values=class_values,
             width=130,
             height=40,
-            corner_radius=8,
-            border_width=1,
-            border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            **input_style(),
         )
         self.class_filter_raw.pack(side="left", padx=5)
 
@@ -737,16 +809,12 @@ class BroadsheetTab(ctk.CTkFrame):
             text_color=COLORS["text_secondary"]
         ).pack(side="left", padx=(20, 8))
 
-        self.term_filter = ctk.CTkOptionMenu(
+        self.term_filter = ctk.CTkComboBox(
             controls_frame,
             values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
             width=150,
             height=40,
-            corner_radius=8,
-            fg_color=COLORS["border"],
-            button_color=COLORS["primary"],
-            button_hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            **input_style(),
         )
         self.term_filter.pack(side="left", padx=5)
 
@@ -756,9 +824,10 @@ class BroadsheetTab(ctk.CTkFrame):
             command=self.load_sheet,
             width=90,
             height=40,
-            corner_radius=8,
+            corner_radius=MODAL_STYLE["radius"],
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
+            text_color=COLORS["text_on_primary"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
         ).pack(side="left", padx=(20, 8))
 
@@ -769,23 +838,26 @@ class BroadsheetTab(ctk.CTkFrame):
             state="disabled",
             width=120,
             height=40,
-            corner_radius=8,
-            fg_color=COLORS["success"],
-            hover_color="#2d8f47",
+            corner_radius=MODAL_STYLE["radius"],
+            fg_color=COLORS["secondary"],
+            hover_color=COLORS["secondary_hover"],
+            text_color=COLORS["text_on_primary"],
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
         self.export_btn.pack(side="left", padx=5)
-        
-        # Import button
+
         self.import_btn = ctk.CTkButton(
             controls_frame,
             text="Import CSV",
             command=self.import_from_csv,
             width=100,
             height=40,
-            corner_radius=8,
-            fg_color=COLORS["warning"],
-            hover_color="#e0a800",
+            corner_radius=MODAL_STYLE["radius"],
+            fg_color="transparent",
+            border_width=1,
+            border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_card"],
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
         self.import_btn.pack(side="left", padx=5)
@@ -794,12 +866,36 @@ class BroadsheetTab(ctk.CTkFrame):
         self.sheet_frame = ctk.CTkScrollableFrame(
             self,
             orientation="horizontal",
-            fg_color=COLORS["bg_card"],
-            corner_radius=12,
+            fg_color=COLORS["sheet_row"],
+            corner_radius=MODAL_STYLE["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
             scrollbar_button_color=COLORS["primary"],
             scrollbar_button_hover_color=COLORS["primary_hover"]
         )
         self.sheet_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+
+    def _sheet_cell(self, parent, text, row, column, width=70, anchor="w", bold=False, bg=None):
+        if bg is None:
+            bg = COLORS["sheet_header"] if row == 0 else (
+                COLORS["sheet_row_alt"] if row % 2 == 0 else COLORS["sheet_row"]
+            )
+        label = ctk.CTkLabel(
+            parent,
+            text=text,
+            width=width,
+            anchor=anchor,
+            fg_color=bg,
+            corner_radius=0,
+            font=ctk.CTkFont(
+                family="Segoe UI",
+                size=12,
+                weight="bold" if bold or row == 0 else "normal",
+            ),
+            text_color=COLORS["text_secondary"] if row == 0 else COLORS["text_primary"],
+        )
+        label.grid(row=row, column=column, padx=0, pady=0, sticky="nsew")
+        return label
 
     def get_class_population(self, class_name):
         return self.session.query(Student).filter_by(class_name=class_name).count()
@@ -824,18 +920,12 @@ class BroadsheetTab(ctk.CTkFrame):
         if not self.students:
             empty_frame = ctk.CTkFrame(self.sheet_frame, fg_color="transparent")
             empty_frame.grid(row=0, column=0, pady=60, padx=100)
-            
-            ctk.CTkLabel(
-                empty_frame,
-                text="No Data",
-                font=ctk.CTkFont(size=48)
-            ).pack(pady=(0, 10))
-            
+
             ctk.CTkLabel(
                 empty_frame,
                 text=f"No students in {class_name}",
-                font=ctk.CTkFont(family="Segoe UI", size=16),
-                text_color=COLORS["text_secondary"]
+                font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+                text_color=COLORS["text_primary"]
             ).pack()
             
             self.export_btn.configure(state="disabled")
@@ -856,14 +946,15 @@ class BroadsheetTab(ctk.CTkFrame):
 
         # Headers
         headers = ["#", "Student ID", "Name"] + [s.subject_code for s in self.subjects] + ["Total", "Avg", "Pos"]
+        col_widths = [40, 110, 180] + [64] * len(self.subjects) + [70, 70, 50]
         for c, h in enumerate(headers):
-            ctk.CTkLabel(
-                self.sheet_frame,
-                text=h,
-                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-                text_color=COLORS["text_secondary"],
-                width=70 if c > 2 else (40 if c == 0 else 100)
-            ).grid(row=0, column=c, padx=6, pady=12, sticky="w")
+            self._sheet_cell(
+                self.sheet_frame, h, 0, c,
+                width=col_widths[c] if c < len(col_widths) else 64,
+                anchor="center" if c > 2 else ("center" if c == 0 else "w"),
+                bold=True,
+                bg=COLORS["sheet_header"],
+            )
 
         # Calculate totals and positions
         student_totals = []
@@ -879,28 +970,11 @@ class BroadsheetTab(ctk.CTkFrame):
 
         # Student Rows (in original order)
         for r, student in enumerate(self.students, 1):
-            ctk.CTkLabel(
-                self.sheet_frame,
-                text=str(r),
-                font=ctk.CTkFont(family="Segoe UI", size=12),
-                text_color=COLORS["text_secondary"],
-                width=40
-            ).grid(row=r, column=0, padx=6, pady=8)
+            row_bg = COLORS["sheet_row"] if r % 2 == 1 else COLORS["sheet_row_alt"]
 
-            ctk.CTkLabel(
-                self.sheet_frame,
-                text=student.student_id,
-                font=ctk.CTkFont(family="Segoe UI", size=12),
-                text_color=COLORS["text_primary"]
-            ).grid(row=r, column=1, padx=6, pady=8, sticky="w")
-
-            ctk.CTkLabel(
-                self.sheet_frame,
-                text=student.name,
-                anchor="w",
-                font=ctk.CTkFont(family="Segoe UI", size=12),
-                text_color=COLORS["text_primary"]
-            ).grid(row=r, column=2, padx=6, pady=8, sticky="w")
+            self._sheet_cell(self.sheet_frame, str(r), r, 0, width=40, bg=row_bg, anchor="center")
+            self._sheet_cell(self.sheet_frame, student.student_id, r, 1, width=110, bg=row_bg)
+            self._sheet_cell(self.sheet_frame, student.name, r, 2, width=180, bg=row_bg)
 
             scores = []
             for c, sub in enumerate(self.subjects, 3):
@@ -908,44 +982,53 @@ class BroadsheetTab(ctk.CTkFrame):
                 if isinstance(score, (int, float)):
                     scores.append(score)
                     score_text = f"{score:.0f}"
-                    score_color = COLORS["success"] if score >= 50 else (COLORS["warning"] if score >= 40 else COLORS["danger"])
                 else:
                     score_text = "-"
-                    score_color = COLORS["text_secondary"]
 
-                ctk.CTkLabel(
+                self._sheet_cell(
                     self.sheet_frame,
-                    text=score_text,
-                    font=ctk.CTkFont(family="Segoe UI", size=12),
-                    text_color=score_color
-                ).grid(row=r, column=c, padx=6, pady=8)
+                    score_text,
+                    r,
+                    c,
+                    width=70,
+                    bg=row_bg,
+                    anchor="center",
+                )
 
-            # Total, Average, Position
             total = sum(scores)
             avg = total / len(self.subjects) if self.subjects else 0
             pos = positions[student.id]
+            summary_start = len(self.subjects) + 3
 
-            ctk.CTkLabel(
+            self._sheet_cell(
                 self.sheet_frame,
-                text=f"{total:.0f}",
-                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-                text_color=COLORS["text_primary"]
-            ).grid(row=r, column=len(self.subjects) + 3, padx=6, pady=8)
-
-            ctk.CTkLabel(
+                f"{total:.0f}",
+                r,
+                summary_start,
+                width=70,
+                bold=True,
+                bg=row_bg,
+                anchor="center",
+            )
+            self._sheet_cell(
                 self.sheet_frame,
-                text=f"{avg:.1f}",
-                font=ctk.CTkFont(family="Segoe UI", size=12),
-                text_color=COLORS["primary"]
-            ).grid(row=r, column=len(self.subjects) + 4, padx=6, pady=8)
-
-            pos_color = COLORS["success"] if pos <= 3 else COLORS["text_primary"]
-            ctk.CTkLabel(
+                f"{avg:.1f}",
+                r,
+                summary_start + 1,
+                width=70,
+                bg=row_bg,
+                anchor="center",
+            )
+            self._sheet_cell(
                 self.sheet_frame,
-                text=f"{pos}",
-                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-                text_color=pos_color
-            ).grid(row=r, column=len(self.subjects) + 5, padx=6, pady=8)
+                f"{pos}",
+                r,
+                summary_start + 2,
+                width=50,
+                bold=True,
+                bg=row_bg,
+                anchor="center",
+            )
 
     def export_to_csv(self):
         if not self.broadsheet_data or not self.students or not self.subjects:
@@ -1096,21 +1179,37 @@ class BroadsheetTab(ctk.CTkFrame):
 
 
 class AttendanceTab(ctk.CTkFrame):
+    """Excel-style attendance sheet: students as rows, dates as columns."""
+
     def __init__(self, parent, session):
         super().__init__(parent, fg_color="transparent")
         self.session = session
         self.current_class = None
-        self.current_date = None
         self.students = []
+        self.attendance_dates = []
         self.attendance_vars = {}
+        self.record_map = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-
         self.setup_ui()
 
+    def _date_key(self, value):
+        if isinstance(value, dt_date):
+            return value.isoformat()
+        if value is None:
+            return ""
+        text = str(value).strip()
+        return text[:10] if len(text) >= 10 else text
+
+    def _format_date_header(self, date_key):
+        try:
+            parsed = dt_date.fromisoformat(date_key)
+            return parsed.strftime("%a, %b %d")
+        except ValueError:
+            return date_key
+
     def setup_ui(self):
-        # Header
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 15))
 
@@ -1118,378 +1217,446 @@ class AttendanceTab(ctk.CTkFrame):
             header_frame,
             text=TextLabelManager.get_header_text('attendance'),
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["text_primary"],
         ).pack(side="left", padx=20, pady=15)
 
-        # Step-by-step controls
         controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         controls_frame.pack(side="right", padx=20, pady=15)
 
-        # Step 1: Class Selection - Always show all 6 classes
         ctk.CTkLabel(
             controls_frame,
-            text="1. Select Class:",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text="Class",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(0, 8))
-
-        # Always show all classes regardless of student enrollment
-        class_values = ["SSS1", "SSS2", "SSS3"]
 
         self.class_var = ctk.StringVar()
         self.class_combo = ctk.CTkComboBox(
             controls_frame,
             variable=self.class_var,
-            values=class_values,
+            values=["SSS1", "SSS2", "SSS3"],
             width=100,
             height=40,
-            corner_radius=8,
-            border_width=1,
-            border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            command=self.on_class_selected
+            command=self.on_class_selected,
+            **input_style(),
         )
-        self.class_combo.pack(side="left", padx=5)
+        self.class_combo.pack(side="left", padx=(0, 12))
 
-        # Step 2: Date Selection
         ctk.CTkLabel(
             controls_frame,
-            text="2. Select Date:",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=(20, 8))
+            text="New Date",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
 
-        self.date_picker = DateEntry(
+        self.date_picker = DatePickerField(
             controls_frame,
-            width=12,
-            background='darkblue',
-            foreground='white',
-            borderwidth=2,
-            date_pattern='yyyy-mm-dd',
-            font=('Segoe UI', 10)
-        )
-        self.date_picker.pack(side="left", padx=5)
-        self.date_picker.bind("<<DateEntrySelected>>", self.on_date_selected)
-
-        # Step 3: Load Button
-        self.load_btn = ctk.CTkButton(
-            controls_frame,
-            text="3. " + TextLabelManager.get_button_text('load'),
-            command=self.load_attendance,
-            width=100,
+            width=120,
             height=40,
-            corner_radius=8,
+            font_size=13,
+        )
+        self.date_picker.pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            controls_frame,
+            text="Add Date Column",
+            command=self.add_date_column,
+            width=130,
+            height=40,
+            corner_radius=MODAL_STYLE["radius"],
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
+            text_color=COLORS["text_on_primary"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            state="disabled"
-        )
-        self.load_btn.pack(side="left", padx=(20, 8))
+        ).pack(side="left", padx=(0, 12))
 
-        # Step 4: Save Button
         self.save_btn = ctk.CTkButton(
             controls_frame,
-            text="4. " + TextLabelManager.get_button_text('save'),
+            text=TextLabelManager.get_button_text('save') + " All",
             command=self.save_attendance,
-            width=100,
+            width=110,
             height=40,
-            corner_radius=8,
-            fg_color=COLORS["success"],
-            hover_color="#2d8f47",
+            corner_radius=MODAL_STYLE["radius"],
+            fg_color=COLORS["secondary"],
+            hover_color=COLORS["primary"],
+            text_color=COLORS["text_on_primary"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            state="disabled"
+            state="disabled",
         )
-        self.save_btn.pack(side="left", padx=5)
+        self.save_btn.pack(side="left")
 
-        # Main content area
-        self.content_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
+        self.content_frame = ctk.CTkFrame(
+            self,
+            fg_color=COLORS["bg_card"],
+            corner_radius=MODAL_STYLE["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+        )
         self.content_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
-        
-        # Instructions
-        self.show_instructions()
+        self.content_frame.grid_columnconfigure(0, weight=1)
+        self.content_frame.grid_rowconfigure(0, weight=1)
 
-    def show_instructions(self):
-        """Show step-by-step instructions."""
+        self.show_placeholder()
+
+    def show_placeholder(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
-            
-        instruction_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        instruction_frame.pack(expand=True, fill="both", padx=50, pady=50)
-        
+
+        placeholder = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        placeholder.pack(expand=True, fill="both", padx=40, pady=40)
+
         ctk.CTkLabel(
-            instruction_frame,
-            text="📋 How to Record Attendance",
-            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(pady=(0, 30))
-        
-        instructions = [
-            "1. Select a class from the dropdown menu",
-            "2. Choose the date for attendance recording",
-            "3. Click 'Load' to see the student list",
-            "4. Check/uncheck students who are present",
-            "5. Click 'Save' to record the attendance"
-        ]
-        
-        for instruction in instructions:
-            ctk.CTkLabel(
-                instruction_frame,
-                text=instruction,
-                font=ctk.CTkFont(family="Segoe UI", size=14),
-                text_color=COLORS["text_secondary"],
-                anchor="w"
-            ).pack(pady=5, fill="x")
+            placeholder,
+            text="Attendance Sheet",
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(pady=(0, 12))
+
+        ctk.CTkLabel(
+            placeholder,
+            text="Select a class to load the sheet. Use Add Date Column to add a new date column with checkboxes for each student.",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
+            wraplength=520,
+        ).pack()
 
     def on_class_selected(self, value):
-        """Handle class selection."""
         self.current_class = value
-        self.update_load_button_state()
-        
-    def on_date_selected(self, event=None):
-        """Handle date selection."""
-        self.current_date = self.date_picker.get_date()
-        self.update_load_button_state()
-        
-    def update_load_button_state(self):
-        """Enable load button when both class and date are selected."""
-        if self.current_class and self.current_date:
-            self.load_btn.configure(state="normal")
-        else:
-            self.load_btn.configure(state="disabled")
+        self.load_sheet()
 
-    def load_attendance(self):
-        """Load students and existing attendance for the selected class and date."""
-        if not self.current_class or not self.current_date:
-            messagebox.showwarning("Selection Required", "Please select both class and date first.")
+    def load_sheet(self):
+        if not self.current_class:
             return
-            
-        # Clear content
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-            
-        # Load students
+
         self.students = self.session.query(Student).filter_by(
             class_name=self.current_class
         ).order_by(Student.full_name).all()
-        
+
         if not self.students:
-            self.show_no_students()
-            return
-            
-        # Create attendance interface
-        self.create_attendance_interface()
-        
-    def show_no_students(self):
-        """Show message when no students found."""
-        empty_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        empty_frame.pack(expand=True, fill="both", padx=50, pady=50)
-        
-        ctk.CTkLabel(
-            empty_frame,
-            text="No Students Found",
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
-            text_color=COLORS["text_secondary"]
-        ).pack(pady=20)
-        
-        ctk.CTkLabel(
-            empty_frame,
-            text=f"No students registered in {self.current_class}",
-            font=ctk.CTkFont(family="Segoe UI", size=14),
-            text_color=COLORS["text_secondary"]
-        ).pack()
-        
-    def create_attendance_interface(self):
-        """Create the attendance marking interface."""
-        # Header with class and date info
-        info_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        info_frame.pack(fill="x", padx=20, pady=15)
-        
-        ctk.CTkLabel(
-            info_frame,
-            text=f"Attendance for {self.current_class} - {self.current_date.strftime('%B %d, %Y')}",
-            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(side="left")
-        
-        # Quick actions
-        actions_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        actions_frame.pack(side="right")
-        
-        ctk.CTkButton(
-            actions_frame,
-            text="Mark All Present",
-            command=self.mark_all_present,
-            width=120,
-            height=35,
-            corner_radius=8,
-            fg_color=COLORS["success"],
-            hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=12)
-        ).pack(side="left", padx=5)
-        
-        ctk.CTkButton(
-            actions_frame,
-            text="Mark All Absent",
-            command=self.mark_all_absent,
-            width=120,
-            height=35,
-            corner_radius=8,
-            fg_color=COLORS["danger"],
-            hover_color="#c9302c",
-            font=ctk.CTkFont(family="Segoe UI", size=12)
-        ).pack(side="left", padx=5)
-        
-        # Students list
-        students_frame = ctk.CTkScrollableFrame(
-            self.content_frame,
-            fg_color=COLORS["border"],
-            corner_radius=8
-        )
-        students_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        self.attendance_vars = {}
-        
-        # Load existing attendance
-        existing_attendance = {}
-        attendance_records = self.session.query(Attendance).filter_by(
-            date=self.current_date
-        ).all()
-        
-        for record in attendance_records:
-            existing_attendance[record.student_id] = record.is_present
-            
-        # Create student checkboxes
-        for i, student in enumerate(self.students):
-            student_frame = ctk.CTkFrame(students_frame, fg_color=COLORS["bg_card"], corner_radius=8)
-            student_frame.pack(fill="x", padx=10, pady=5)
-            
-            # Student info
-            info_frame = ctk.CTkFrame(student_frame, fg_color="transparent")
-            info_frame.pack(side="left", fill="x", expand=True, padx=15, pady=10)
-            
+            for widget in self.content_frame.winfo_children():
+                widget.destroy()
+            empty = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+            empty.pack(expand=True, fill="both", padx=40, pady=40)
             ctk.CTkLabel(
-                info_frame,
-                text=f"{i+1:2d}. {student.name}",
-                font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                empty,
+                text=f"No students registered in {self.current_class}",
+                font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
                 text_color=COLORS["text_primary"],
-                anchor="w"
-            ).pack(side="left")
-            
-            ctk.CTkLabel(
-                info_frame,
-                text=f"({student.student_id})",
-                font=ctk.CTkFont(family="Segoe UI", size=12),
-                text_color=COLORS["text_secondary"],
-                anchor="w"
-            ).pack(side="left", padx=(10, 0))
-            
-            # Attendance checkbox
-            is_present = existing_attendance.get(student.id, True)  # Default to present
-            var = tk.BooleanVar(value=is_present)
-            self.attendance_vars[student.id] = var
-            
-            checkbox = ctk.CTkCheckBox(
-                student_frame,
-                text="Present",
-                variable=var,
-                width=100,
-                height=30,
-                corner_radius=6,
-                fg_color=COLORS["success"],
-                hover_color=COLORS["primary"],
-                font=ctk.CTkFont(family="Segoe UI", size=13)
-            )
-            checkbox.pack(side="right", padx=15, pady=10)
-            
-        # Enable save button
-        self.save_btn.configure(state="normal")
-        
-    def mark_all_present(self):
-        """Mark all students as present."""
-        for var in self.attendance_vars.values():
-            var.set(True)
-            
-    def mark_all_absent(self):
-        """Mark all students as absent."""
-        for var in self.attendance_vars.values():
-            var.set(False)
-            
-    def save_attendance(self):
-        """Save attendance records."""
-        if not self.students or not self.attendance_vars:
-            messagebox.showwarning("No Data", "Please load attendance first.")
+            ).pack()
+            self.attendance_dates = []
+            self.attendance_vars = {}
+            self.save_btn.configure(state="disabled")
             return
-            
+
+        student_ids = [student.id for student in self.students]
+        records = self.session.query(Attendance).filter(
+            Attendance.student_id.in_(student_ids)
+        ).all()
+
+        self.record_map = {
+            (record.student_id, self._date_key(record.date)): record.is_present
+            for record in records
+        }
+        self.attendance_dates = sorted(
+            {self._date_key(record.date) for record in records},
+            key=lambda value: value,
+        )
+
+        self.attendance_vars = {}
+        for date_key in self.attendance_dates:
+            for student in self.students:
+                key = (student.id, date_key)
+                default_present = self.record_map.get(key, True)
+                self.attendance_vars[key] = tk.BooleanVar(value=default_present)
+
+        self.build_grid()
+        self.save_btn.configure(state="normal")
+
+    def add_date_column(self):
+        if not self.current_class:
+            messagebox.showwarning("Select Class", "Please select a class first.")
+            return
+
+        if not self.students:
+            self.load_sheet()
+            if not self.students:
+                return
+
+        new_date = self.date_picker.get_date()
+        date_key = self._date_key(new_date)
+
+        if date_key in self.attendance_dates:
+            messagebox.showinfo("Date Exists", f"The column for {date_key} is already on the sheet.")
+            return
+
+        self.attendance_dates.append(date_key)
+        self.attendance_dates.sort()
+
+        for student in self.students:
+            key = (student.id, date_key)
+            existing = self.record_map.get(key, True)
+            self.attendance_vars[key] = tk.BooleanVar(value=existing)
+
+        self.build_grid()
+        self.save_btn.configure(state="normal")
+
+    def build_grid(self):
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        toolbar = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        toolbar.pack(fill="x", padx=16, pady=(16, 8))
+
+        ctk.CTkLabel(
+            toolbar,
+            text=f"{self.current_class}  |  {len(self.students)} students  |  {len(self.attendance_dates)} dates",
+            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(side="left")
+
+        actions = ctk.CTkFrame(toolbar, fg_color="transparent")
+        actions.pack(side="right")
+
+        ctk.CTkButton(
+            actions,
+            text="Mark Column Present",
+            command=lambda: self.set_active_column(True),
+            width=140,
+            height=34,
+            corner_radius=8,
+            fg_color="transparent",
+            border_width=1,
+            border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_card"],
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+        ).pack(side="left", padx=4)
+
+        ctk.CTkButton(
+            actions,
+            text="Mark Column Absent",
+            command=lambda: self.set_active_column(False),
+            width=140,
+            height=34,
+            corner_radius=8,
+            fg_color="transparent",
+            border_width=1,
+            border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_card"],
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+        ).pack(side="left", padx=4)
+
+        scroll_host = ctk.CTkScrollableFrame(
+            self.content_frame,
+            fg_color=COLORS["sheet_row"],
+            corner_radius=MODAL_STYLE["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+            scrollbar_button_color=COLORS["primary"],
+            scrollbar_button_hover_color=COLORS["primary_hover"],
+        )
+        scroll_host.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+
+        h_scroll = ctk.CTkScrollableFrame(
+            scroll_host,
+            orientation="horizontal",
+            fg_color="transparent",
+            height=min(560, 80 + len(self.students) * 42),
+        )
+        h_scroll.pack(fill="both", expand=True)
+
+        if not self.attendance_dates:
+            ctk.CTkLabel(
+                h_scroll,
+                text="No date columns yet. Pick a date and click Add Date Column.",
+                font=ctk.CTkFont(family="Segoe UI", size=13),
+                text_color=COLORS["text_secondary"],
+            ).grid(row=0, column=0, padx=20, pady=40)
+            return
+
+        fixed_headers = ["#", "Student ID", "Name"]
+        fixed_widths = [40, 120, 200]
+
+        for col, header in enumerate(fixed_headers):
+            self._grid_header(h_scroll, header, 0, col, fixed_widths[col])
+
+        date_col_padx = (12, 10)
+
+        for offset, date_key in enumerate(self.attendance_dates):
+            col = len(fixed_headers) + offset
+            self._grid_header(
+                h_scroll,
+                self._format_date_header(date_key),
+                0,
+                col,
+                80,
+                padx=date_col_padx if offset == 0 else (0, 10),
+            )
+
+        for row_index, student in enumerate(self.students, start=1):
+            row_bg = COLORS["sheet_row"] if row_index % 2 == 1 else COLORS["sheet_row_alt"]
+            self._grid_cell(h_scroll, str(row_index), row_index, 0, 40, row_bg, anchor="center")
+            self._grid_cell(h_scroll, student.student_id, row_index, 1, 120, row_bg)
+            self._grid_cell(h_scroll, student.full_name, row_index, 2, 200, row_bg)
+
+            for offset, date_key in enumerate(self.attendance_dates):
+                col = len(fixed_headers) + offset
+                cell = ctk.CTkFrame(
+                    h_scroll,
+                    fg_color=row_bg,
+                    width=80,
+                    height=36,
+                    corner_radius=0,
+                )
+                cell.grid(
+                    row=row_index,
+                    column=col,
+                    padx=date_col_padx if offset == 0 else (0, 10),
+                    pady=0,
+                    sticky="nsew",
+                )
+
+                var = self.attendance_vars[(student.id, date_key)]
+                ctk.CTkCheckBox(
+                    cell,
+                    text="",
+                    variable=var,
+                    width=24,
+                    height=24,
+                    checkbox_width=22,
+                    checkbox_height=22,
+                    corner_radius=6,
+                    border_width=1,
+                    fg_color=COLORS["primary"],
+                    hover_color=COLORS["primary_hover"],
+                ).pack(expand=True)
+
+        self.active_date_key = self.attendance_dates[-1]
+
+    def _grid_header(self, parent, text, row, column, width, padx=(0, 0)):
+        frame = ctk.CTkFrame(parent, fg_color=COLORS["sheet_header"], width=width, height=36, corner_radius=0)
+        frame.grid(row=row, column=column, padx=padx, pady=0, sticky="nsew")
+        ctk.CTkLabel(
+            frame,
+            text=text,
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color=COLORS["text_secondary"],
+        ).pack(expand=True)
+
+    def _grid_cell(self, parent, text, row, column, width, bg, anchor="w"):
+        ctk.CTkLabel(
+            parent,
+            text=text,
+            width=width,
+            height=36,
+            anchor=anchor,
+            fg_color=bg,
+            corner_radius=0,
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=COLORS["text_primary"],
+        ).grid(row=row, column=column, padx=0, pady=0, sticky="nsew")
+
+    def set_active_column(self, is_present):
+        date_key = getattr(self, "active_date_key", None)
+        if not date_key or not self.students:
+            return
+        for student in self.students:
+            key = (student.id, date_key)
+            if key in self.attendance_vars:
+                self.attendance_vars[key].set(is_present)
+
+    def _find_record(self, student_id, date_key):
+        records = self.session.query(Attendance).filter_by(student_id=student_id).all()
+        for record in records:
+            if self._date_key(record.date) == date_key:
+                return record
+        return None
+
+    def save_attendance(self):
+        if not self.students or not self.attendance_dates:
+            messagebox.showwarning("No Data", "Add at least one date column before saving.")
+            return
+
         try:
             saved_count = 0
-            
-            for student in self.students:
-                is_present = self.attendance_vars[student.id].get()
-                
-                # Check if record already exists
-                existing_record = self.session.query(Attendance).filter_by(
-                    student_id=student.id,
-                    date=self.current_date
-                ).first()
-                
-                if existing_record:
-                    existing_record.is_present = is_present
-                else:
-                    new_record = Attendance(
-                        student_id=student.id,
-                        date=self.current_date,
-                        is_present=is_present
-                    )
-                    self.session.add(new_record)
-                    
-                saved_count += 1
-                
+            for date_key in self.attendance_dates:
+                for student in self.students:
+                    key = (student.id, date_key)
+                    is_present = self.attendance_vars[key].get()
+
+                    existing = self._find_record(student.id, date_key)
+
+                    if existing:
+                        existing.is_present = is_present
+                    else:
+                        self.session.add(
+                            Attendance(
+                                student_id=student.id,
+                                date=date_key,
+                                is_present=is_present,
+                            )
+                        )
+                    saved_count += 1
+
             self.session.commit()
-            
-            present_count = sum(1 for var in self.attendance_vars.values() if var.get())
-            absent_count = len(self.students) - present_count
-            
             messagebox.showinfo(
-                "Attendance Saved", 
-                f"✅ Attendance saved successfully!\n\n"
-                f"Class: {self.current_class}\n"
-                f"Date: {self.current_date.strftime('%B %d, %Y')}\n"
-                f"Present: {present_count}\n"
-                f"Absent: {absent_count}\n"
-                f"Total: {len(self.students)}"
+                "Attendance Saved",
+                f"Saved {saved_count} attendance records for {self.current_class}.",
             )
-            
+            self.load_sheet()
         except Exception as e:
             self.session.rollback()
             messagebox.showerror("Error", f"Failed to save attendance: {str(e)}")
 
     def add_today(self):
-        """Quick add today's date - kept for compatibility."""
-        from datetime import date
-        self.date_picker.set_date(date.today())
-        self.current_date = date.today()
-        self.update_load_button_state()
+        self.date_picker.set_date(dt_date.today())
 
-    # Remove all the old complex methods - they're no longer needed
     def add_new_attendance_column(self):
-        """Legacy method - now handled by date picker."""
-        pass
-        
+        self.add_date_column()
+
     def load_class(self):
-        """Legacy method - now handled by load_attendance."""
-        pass
-        
+        if self.current_class:
+            self.load_sheet()
+
     def calculate_percentage(self, student_id):
-        """Legacy method - no longer needed."""
         pass
-        
+
     def add_attendance_checkbox(self, student, att_date, row, col):
-        """Legacy method - no longer needed."""
         pass
-        
+
     def export_to_csv(self):
-        """Export functionality - can be added later if needed."""
-        messagebox.showinfo("Export", "Export functionality will be added in a future update.")
+        if not self.students or not self.attendance_dates:
+            messagebox.showwarning("No Data", "Load a class and add date columns before exporting.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfile=safe_export_filename(
+                "attendance",
+                self.current_class,
+                dt_date.today().isoformat(),
+                extension="csv",
+            ),
+            title="Export Attendance",
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, mode="w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(["Student ID", "Name"] + self.attendance_dates)
+                for student in self.students:
+                    row = [student.student_id, student.full_name]
+                    for date_key in self.attendance_dates:
+                        present = self.attendance_vars[(student.id, date_key)].get()
+                        row.append("Present" if present else "Absent")
+                    writer.writerow(row)
+            messagebox.showinfo("Export Success", f"Attendance exported to:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export attendance: {str(e)}")
 
 
 class SchoolManagementApp:

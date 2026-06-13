@@ -7,8 +7,7 @@ from tkinter import messagebox
 from sqlalchemy.exc import IntegrityError
 from models import Session, Student, AcademicSession, Department
 from datetime import date as dt_date, datetime
-from tkcalendar import DateEntry
-from ui_components import TextLabelManager
+from ui_components import TextLabelManager, DatePickerField, ModalOptionPicker, NIGERIAN_STATES
 
 COLORS = {
     "primary":       "#1a73e8",
@@ -21,15 +20,6 @@ COLORS = {
     "text_secondary":"#5f6368",
     "border":        "#dadce0",
 }
-
-NIGERIAN_STATES = [
-    "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno",
-    "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "Gombe", "Imo", "Jigawa",
-    "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger",
-    "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe",
-    "Zamfara", "FCT"
-]
-
 
 class YearSpinner(ctk.CTkFrame):
     """Unbounded year spinner widget — no min/max limits."""
@@ -261,19 +251,22 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         self._label(form_scroll, "Date of Birth *", row)
         dob_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
         dob_frame.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-        self.dob_picker = DateEntry(
-            dob_frame, width=15, background='darkblue', foreground='white',
-            borderwidth=2, date_pattern='yyyy-mm-dd',
-            font=('Segoe UI', 12), maxdate=dt_date.today()
+        self.dob_picker = DatePickerField(
+            dob_frame,
+            width=140,
+            height=45,
+            font_size=14,
+            maxdate=dt_date.today(),
+            on_change=self.update_age_display,
         )
         self.dob_picker.pack(side="left", padx=(0, 15))
-        self.dob_picker.bind("<<DateEntrySelected>>", self.update_age_display)
         ctk.CTkLabel(dob_frame, text="Age:", font=ctk.CTkFont(size=13),
                      text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 5))
         self.age_display = ctk.CTkLabel(dob_frame, text="-- years old",
                                         font=ctk.CTkFont(size=13, weight="bold"),
                                         text_color=COLORS["primary"])
         self.age_display.pack(side="left")
+        self.update_age_display()
         row += 1
 
         # Sex
@@ -310,12 +303,16 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
 
         # State of Origin
         self._label(form_scroll, "State of Origin *", row)
-        self.state_var = ctk.StringVar()
-        ctk.CTkComboBox(form_scroll, variable=self.state_var, values=NIGERIAN_STATES,
-                        width=380, height=45, corner_radius=10,
-                        border_width=1, border_color=COLORS["border"],
-                        font=ctk.CTkFont(size=14)
-                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
+        self.state_picker = ModalOptionPicker(
+            form_scroll,
+            options=NIGERIAN_STATES,
+            title="State of Origin",
+            placeholder="Select state...",
+            width=308,
+            height=45,
+            font_size=14,
+        )
+        self.state_picker.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
         row += 1
         self.state_error_label = self._error_label(form_scroll, row); row += 1
 
@@ -476,7 +473,7 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         sex = self.sex_var.get()
         class_name = self.class_var.get()
         dept_name = self.dept_var.get()
-        state = self.state_var.get().strip()
+        state = self.state_picker.get()
         home_address = self.home_address_text.get("1.0", "end-1c").strip()
         phone = self._phone_vars["phone"].get().strip()
         guardian_name = self.guardian_name_entry.get().strip()

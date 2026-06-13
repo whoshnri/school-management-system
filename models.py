@@ -3,6 +3,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from datetime import date as dt_date
 
+from app_paths import app_dir
+
 Base = declarative_base()
 
 
@@ -61,6 +63,18 @@ class Fee(Base):
     __table_args__ = (UniqueConstraint('student_id', 'term', name='_student_term_uc'),)
 
 
+class FeeStructure(Base):
+    __tablename__ = 'fee_structures'
+
+    id          = Column(Integer, primary_key=True)
+    class_name  = Column(String(10), nullable=False)
+    term        = Column(Integer, nullable=False)
+    amount_due  = Column(Float, default=0, nullable=False)
+    updated_at  = Column(String(50), nullable=True)
+
+    __table_args__ = (UniqueConstraint('class_name', 'term', name='_class_term_fee_uc'),)
+
+
 class Student(Base):
     __tablename__ = 'students'
 
@@ -93,6 +107,7 @@ class Student(Base):
 
     # Relationships
     marks             = relationship("Mark", back_populates="student")
+    report_cards      = relationship("ReportCard", back_populates="student", cascade="all, delete-orphan")
     attendance_records = relationship("Attendance", order_by=Attendance.date, back_populates="student")
     fees              = relationship("Fee", back_populates="student")
     department        = relationship("Department")
@@ -128,6 +143,29 @@ class Mark(Base):
     subject = relationship("Subject")
 
 
+class ReportCard(Base):
+    __tablename__ = 'report_cards'
+
+    id                  = Column(Integer, primary_key=True)
+    student_id          = Column(Integer, ForeignKey('students.id'), nullable=False)
+    term                = Column(Integer, nullable=False)
+    punctuality         = Column(Integer, nullable=True)
+    neatness            = Column(Integer, nullable=True)
+    discipline          = Column(Integer, nullable=True)
+    teamwork            = Column(Integer, nullable=True)
+    teacher_comment     = Column(String(1000), nullable=True)
+    principal_comment   = Column(String(1000), nullable=True)
+    teacher_signature   = Column(String(200), nullable=True)
+    principal_signature = Column(String(200), nullable=True)
+    parent_signature    = Column(String(200), nullable=True)
+    created_at          = Column(String(50), nullable=True)
+    updated_at          = Column(String(50), nullable=True)
+
+    student = relationship("Student", back_populates="report_cards")
+
+    __table_args__ = (UniqueConstraint('student_id', 'term', name='_student_term_report_uc'),)
+
+
 class Admin(Base):
     __tablename__ = 'admins'
 
@@ -138,8 +176,9 @@ class Admin(Base):
     is_active     = Column(Boolean, default=True)
 
 
-# Use SQLite
-engine = create_engine('sqlite:///school_management.db')
+# Use SQLite beside the app/exe so data persists across runs.
+DB_FILE = app_dir() / "school_management.db"
+engine = create_engine(f"sqlite:///{DB_FILE.as_posix()}")
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
@@ -164,3 +203,32 @@ def run_migrations():
                 conn.commit()
             except Exception:
                 pass
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS fee_structures ("
+            "id INTEGER PRIMARY KEY, "
+            "class_name VARCHAR(10) NOT NULL, "
+            "term INTEGER NOT NULL, "
+            "amount_due FLOAT NOT NULL DEFAULT 0, "
+            "updated_at VARCHAR(50), "
+            "UNIQUE(class_name, term))"
+        ))
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS report_cards ("
+            "id INTEGER PRIMARY KEY, "
+            "student_id INTEGER NOT NULL REFERENCES students(id), "
+            "term INTEGER NOT NULL, "
+            "punctuality INTEGER, "
+            "neatness INTEGER, "
+            "discipline INTEGER, "
+            "teamwork INTEGER, "
+            "teacher_comment VARCHAR(1000), "
+            "principal_comment VARCHAR(1000), "
+            "teacher_signature VARCHAR(200), "
+            "principal_signature VARCHAR(200), "
+            "parent_signature VARCHAR(200), "
+            "created_at VARCHAR(50), "
+            "updated_at VARCHAR(50), "
+            "UNIQUE(student_id, term))"
+        ))
+        conn.commit()

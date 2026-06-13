@@ -2,9 +2,7 @@
 Enhanced Student Details Windows
 Separate windows for viewing bio data, attendance, and results with export functionality
 """
-import tkinter as tk
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
 from models import Session, Student, Attendance, Mark, Subject
 from datetime import datetime
 import csv
@@ -14,21 +12,21 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from ui_components import (
+    MODAL_STYLE,
+    center_toplevel,
+    create_modal_header,
+    input_style,
+    safe_export_filename,
+    setup_modal_window,
+    ask_save_filename,
+    show_info,
+    show_error,
+    show_warning,
+    close_modal_window,
+)
 
-# Modern color palette
-COLORS = {
-    "primary": "#1a73e8",
-    "primary_hover": "#1557b0",
-    "secondary": "#5f6368",
-    "success": "#34a853",
-    "warning": "#fbbc04",
-    "danger": "#ea4335",
-    "bg_dark": "#ffffff",
-    "bg_card": "#f8f9fa",
-    "text_primary": "#202124",
-    "text_secondary": "#5f6368",
-    "border": "#dadce0"
-}
+COLORS = MODAL_STYLE
 
 
 class StudentBioDataWindow(ctk.CTkToplevel):
@@ -41,56 +39,49 @@ class StudentBioDataWindow(ctk.CTkToplevel):
         self.student = None
         
         self.title("Student Bio Data")
-        
-        # Reduce window height to fit screen better
+
         screen_height = self.winfo_screenheight()
-        window_height = min(650, int(screen_height * 0.8))  # 80% of screen or 650px max
-        self.geometry(f"700x{window_height}")
+        window_height = min(650, int(screen_height * 0.8))
         self.transient(parent)
-        
-        # Center window
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - 350
-        y = (self.winfo_screenheight() // 2) - (window_height // 2)
-        self.geometry(f"700x{window_height}+{x}+{y}")
-        
-        self.configure(fg_color=COLORS["bg_dark"])
-        
+        self.configure(fg_color=COLORS["bg_main"])
+        center_toplevel(self, parent, 720, window_height)
+
         self.setup_ui()
         self.load_student_data()
-    
+        setup_modal_window(self)
+
     def setup_ui(self):
         """Set up the bio data UI."""
-        # Header
-        header_frame = ctk.CTkFrame(self, fg_color=COLORS["primary"], corner_radius=0)
-        header_frame.pack(fill="x")
-        
-        ctk.CTkLabel(
-            header_frame,
-            text="Student Bio Data",
-            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=20, pady=15)
-        
-        # Export button
+        _, self.header_subtitle = create_modal_header(self, "Student Bio Data")
+
+        toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        toolbar.pack(fill="x", padx=COLORS["padding"], pady=(0, 8))
+
         ctk.CTkButton(
-            header_frame,
+            toolbar,
             text="Export to PDF",
             command=self.export_bio_data,
             width=140,
             height=40,
-            corner_radius=8,
+            corner_radius=COLORS["radius"],
             fg_color=COLORS["success"],
-            hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
-        ).pack(side="right", padx=20, pady=15)
-        
-        # Scrollable content
+            hover_color=COLORS["success_hover"],
+            text_color=COLORS["text_on_primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        ).pack(side="right")
+
         self.content_frame = ctk.CTkScrollableFrame(
             self,
-            fg_color="transparent"
+            fg_color="transparent",
+            scrollbar_button_color=COLORS["primary"],
+            scrollbar_button_hover_color=COLORS["primary_hover"],
         )
-        self.content_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.content_frame.pack(
+            fill="both",
+            expand=True,
+            padx=COLORS["padding"],
+            pady=(0, COLORS["padding"]),
+        )
 
     
     def load_student_data(self):
@@ -98,10 +89,15 @@ class StudentBioDataWindow(ctk.CTkToplevel):
         self.student = self.session.query(Student).filter_by(id=self.student_id).first()
         
         if not self.student:
-            messagebox.showerror("Error", "Student not found")
-            self.destroy()
+            show_error(self, "Error", "Student not found")
+            close_modal_window(self)
             return
-        
+
+        if self.header_subtitle is not None:
+            self.header_subtitle.configure(
+                text=f"{self.student.full_name}  |  {self.student.student_id}  |  {self.student.class_name}"
+            )
+
         # Display all student information
         self.create_info_section("Personal Information", [
             ("Student ID", self.student.student_id),
@@ -127,48 +123,53 @@ class StudentBioDataWindow(ctk.CTkToplevel):
     
     def create_info_section(self, title, fields):
         """Create a section with labeled fields."""
-        # Section header - left aligned, no dashes
         ctk.CTkLabel(
             self.content_frame,
             text=title,
-            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
             text_color=COLORS["primary"],
-            anchor="w"
-        ).pack(fill="x", pady=(20, 10), padx=5)
-        
-        # Fields
+            anchor="w",
+        ).pack(fill="x", pady=(18, 10))
+
         for label, value in fields:
-            field_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_card"], corner_radius=8)
-            field_frame.pack(fill="x", pady=5)
-            
+            field_frame = ctk.CTkFrame(
+                self.content_frame,
+                fg_color=COLORS["bg_card"],
+                corner_radius=COLORS["radius"],
+                border_width=1,
+                border_color=COLORS["border"],
+            )
+            field_frame.pack(fill="x", pady=4)
+
             ctk.CTkLabel(
                 field_frame,
-                text=label + ":",
+                text=label,
                 font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
                 text_color=COLORS["text_secondary"],
-                width=180,
-                anchor="w"
-            ).pack(side="left", padx=15, pady=12)
-            
+                width=COLORS["label_width"],
+                anchor="w",
+            ).pack(side="left", padx=16, pady=14)
+
             ctk.CTkLabel(
                 field_frame,
                 text=str(value),
                 font=ctk.CTkFont(family="Segoe UI", size=13),
                 text_color=COLORS["text_primary"],
                 anchor="w",
-                wraplength=400
-            ).pack(side="left", padx=10, pady=12, fill="x", expand=True)
+                wraplength=420,
+            ).pack(side="left", padx=(0, 16), pady=14, fill="x", expand=True)
     
     def export_bio_data(self):
         """Export student bio data to PDF."""
         if not self.student:
             return
         
-        filename = filedialog.asksaveasfilename(
+        filename = ask_save_filename(
+            self,
             defaultextension=".pdf",
             filetypes=[("PDF files", "*.pdf")],
-            initialfile=f"student_biodata_{self.student.student_id}.pdf",
-            title="Export Student Bio Data"
+            initialfile=safe_export_filename(self.student.full_name, "biodata", extension="pdf"),
+            title="Export Student Bio Data",
         )
         
         if filename:
@@ -293,9 +294,9 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                 # Build PDF
                 doc.build(story)
                 
-                messagebox.showinfo("Success", f"Bio data exported to {filename}")
+                show_info(self, "Success", f"Bio data exported to {filename}")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+                show_error(self, "Error", f"Failed to export: {str(e)}")
 
 
 class StudentAttendanceWindow(ctk.CTkToplevel):
@@ -308,66 +309,83 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
         self.student = None
         
         self.title("Student Attendance Records")
-        self.geometry("900x700")
         self.transient(parent)
-        
-        # Center window
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - 450
-        y = (self.winfo_screenheight() // 2) - 350
-        self.geometry(f"900x700+{x}+{y}")
-        
-        self.configure(fg_color=COLORS["bg_dark"])
-        
+        self.configure(fg_color=COLORS["bg_main"])
+        center_toplevel(self, parent, 900, 700)
+
         self.setup_ui()
         self.load_attendance_data()
-    
+        setup_modal_window(self)
+
     def setup_ui(self):
         """Set up the attendance UI."""
-        # Header
-        header_frame = ctk.CTkFrame(self, fg_color=COLORS["primary"], corner_radius=0)
-        header_frame.pack(fill="x")
-        
-        self.title_label = ctk.CTkLabel(
-            header_frame,
-            text="📅 Attendance Records",
-            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
-        )
-        self.title_label.pack(side="left", padx=20, pady=15)
-        
-        # Export button
+        _, self.header_subtitle = create_modal_header(self, "Attendance Records")
+
+        toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        toolbar.pack(fill="x", padx=COLORS["padding"], pady=(0, 8))
+
+        ctk.CTkLabel(
+            toolbar,
+            text="Term",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left")
+
+        self.term_var = ctk.StringVar(value="1 - First Term")
+        ctk.CTkComboBox(
+            toolbar,
+            variable=self.term_var,
+            values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
+            width=170,
+            height=40,
+            **input_style(),
+        ).pack(side="left", padx=(8, 0))
+
         ctk.CTkButton(
-            header_frame,
-            text="📥 Export to CSV",
+            toolbar,
+            text="Export to CSV",
             command=self.export_attendance,
             width=140,
             height=40,
-            corner_radius=8,
+            corner_radius=COLORS["radius"],
             fg_color=COLORS["success"],
-            hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
-        ).pack(side="right", padx=20, pady=15)
-        
-        # Statistics frame
-        stats_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
-        stats_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
+            hover_color=COLORS["success_hover"],
+            text_color=COLORS["text_on_primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        ).pack(side="right")
+
+        self.stats_frame = ctk.CTkFrame(
+            self,
+            fg_color=COLORS["bg_card"],
+            corner_radius=COLORS["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.stats_frame.pack(fill="x", padx=COLORS["padding"], pady=(0, 12))
+
         self.stats_label = ctk.CTkLabel(
-            stats_frame,
+            self.stats_frame,
             text="Loading statistics...",
             font=ctk.CTkFont(family="Segoe UI", size=14),
-            text_color=COLORS["text_secondary"]
+            text_color=COLORS["text_primary"],
         )
-        self.stats_label.pack(pady=15)
-        
-        # Attendance records table
+        self.stats_label.pack(pady=16, padx=16)
+
         self.records_frame = ctk.CTkScrollableFrame(
             self,
             fg_color=COLORS["bg_card"],
-            corner_radius=12
+            corner_radius=COLORS["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+            scrollbar_button_color=COLORS["primary"],
+            scrollbar_button_hover_color=COLORS["primary_hover"],
         )
-        self.records_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
+        self.records_frame.pack(
+            fill="both",
+            expand=True,
+            padx=COLORS["padding"],
+            pady=(0, COLORS["padding"]),
+        )
 
     
     def load_attendance_data(self):
@@ -375,12 +393,15 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
         self.student = self.session.query(Student).filter_by(id=self.student_id).first()
         
         if not self.student:
-            messagebox.showerror("Error", "Student not found")
-            self.destroy()
+            show_error(self, "Error", "Student not found")
+            close_modal_window(self)
             return
         
-        self.title_label.configure(text=f"📅 Attendance Records - {self.student.full_name}")
-        
+        if self.header_subtitle is not None:
+            self.header_subtitle.configure(
+                text=f"{self.student.full_name}  |  {self.student.student_id}  |  {self.student.class_name}"
+            )
+
         # Get attendance records
         records = self.session.query(Attendance).filter_by(
             student_id=self.student_id
@@ -422,7 +443,13 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
         
         # Records
         for record in records:
-            record_frame = ctk.CTkFrame(self.records_frame, fg_color=COLORS["bg_dark"], corner_radius=6)
+            record_frame = ctk.CTkFrame(
+                self.records_frame,
+                fg_color=COLORS["bg_main"],
+                corner_radius=COLORS["radius"],
+                border_width=1,
+                border_color=COLORS["border"],
+            )
             record_frame.pack(fill="x", pady=2, padx=5)
             
             # Date
@@ -435,7 +462,7 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
             ).pack(side="left", padx=10, pady=8)
             
             # Status
-            status_text = "✓ Present" if record.is_present else "✗ Absent"
+            status_text = "Present" if record.is_present else "Absent"
             status_color = COLORS["success"] if record.is_present else COLORS["danger"]
             
             ctk.CTkLabel(
@@ -456,16 +483,27 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
                 width=300
             ).pack(side="left", padx=10, pady=8)
     
+    def _selected_term(self):
+        term_value = self.term_var.get()
+        return int(term_value.split()[0]) if " - " in term_value else int(term_value)
+
     def export_attendance(self):
         """Export attendance records to CSV."""
         if not self.student:
             return
-        
-        filename = filedialog.asksaveasfilename(
+
+        current_term = self._selected_term()
+        filename = ask_save_filename(
+            self,
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
-            initialfile=f"attendance_{self.student.student_id}.csv",
-            title="Export Attendance Records"
+            initialfile=safe_export_filename(
+                self.student.full_name,
+                f"term{current_term}",
+                "attendance",
+                extension="csv",
+            ),
+            title="Export Attendance Records",
         )
         
         if filename:
@@ -478,8 +516,6 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
                 current_year = datetime.now().year
                 next_year = current_year + 1
                 session_year = f"{current_year}/{next_year}"
-                # For simplicity, assume current term (could be made dynamic)
-                current_term = 1
                 
                 with open(filename, 'w', newline='', encoding='utf-8') as file:
                     writer = csv.writer(file)
@@ -515,9 +551,9 @@ class StudentAttendanceWindow(ctk.CTkToplevel):
                         remarks = "On time" if record.is_present else "Absent"
                         writer.writerow([record.date, status, remarks])
                 
-                messagebox.showinfo("Success", f"Attendance records exported to {filename}")
+                show_info(self, "Success", f"Attendance records exported to {filename}")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+                show_error(self, "Error", f"Failed to export: {str(e)}")
 
 
 class StudentResultsWindow(ctk.CTkToplevel):
@@ -530,81 +566,77 @@ class StudentResultsWindow(ctk.CTkToplevel):
         self.student = None
         
         self.title("Student Academic Results")
-        self.geometry("1100x700")
         self.transient(parent)
-        
-        # Center window
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - 550
-        y = (self.winfo_screenheight() // 2) - 350
-        self.geometry(f"1100x700+{x}+{y}")
-        
-        self.configure(fg_color=COLORS["bg_dark"])
-        
+        self.configure(fg_color=COLORS["bg_main"])
+        center_toplevel(self, parent, 1100, 700)
+
         self.setup_ui()
         self.load_results_data()
-    
+        setup_modal_window(self)
+
     def setup_ui(self):
         """Set up the results UI."""
-        # Header
-        header_frame = ctk.CTkFrame(self, fg_color=COLORS["primary"], corner_radius=0)
-        header_frame.pack(fill="x")
-        
-        self.title_label = ctk.CTkLabel(
-            header_frame,
-            text="📊 Academic Results",
-            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
-        )
-        self.title_label.pack(side="left", padx=20, pady=15)
-        
-        # Controls
-        controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        controls_frame.pack(side="right", padx=20, pady=15)
-        
-        # Term selector
+        _, self.header_subtitle = create_modal_header(self, "Academic Results")
+
+        toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        toolbar.pack(fill="x", padx=COLORS["padding"], pady=(0, 8))
+
         ctk.CTkLabel(
-            controls_frame,
-            text="Term:",
+            toolbar,
+            text="Term",
             font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=(0, 8))
-        
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left")
+
         self.term_var = ctk.StringVar(value="1")
         self.term_combo = ctk.CTkComboBox(
-            controls_frame,
+            toolbar,
             variable=self.term_var,
             values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
-            width=150,
-            height=35,
-            command=lambda x: self.load_results_data()
+            width=170,
+            height=40,
+            command=lambda _value: self.load_results_data(),
+            **input_style(),
         )
-        self.term_combo.pack(side="left", padx=5)
-        
-        # Export button
+        self.term_combo.pack(side="left", padx=(8, 0))
+
         ctk.CTkButton(
-            controls_frame,
-            text="📥 Export",
+            toolbar,
+            text="Export",
             command=self.export_results,
             width=100,
-            height=35,
-            corner_radius=8,
+            height=40,
+            corner_radius=COLORS["radius"],
             fg_color=COLORS["success"],
-            hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
-        ).pack(side="left", padx=(20, 0))
-        
-        # Summary frame
-        self.summary_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
-        self.summary_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
-        # Results table
+            hover_color=COLORS["success_hover"],
+            text_color=COLORS["text_on_primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        ).pack(side="right")
+
+        self.summary_frame = ctk.CTkFrame(
+            self,
+            fg_color=COLORS["bg_card"],
+            corner_radius=COLORS["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.summary_frame.pack(fill="x", padx=COLORS["padding"], pady=(0, 12))
+
         self.results_frame = ctk.CTkScrollableFrame(
             self,
             fg_color=COLORS["bg_card"],
-            corner_radius=12
+            corner_radius=COLORS["radius"],
+            border_width=1,
+            border_color=COLORS["border"],
+            scrollbar_button_color=COLORS["primary"],
+            scrollbar_button_hover_color=COLORS["primary_hover"],
         )
-        self.results_frame.pack(fill="both", expand=True, padx=20, pady=(10, 20))
+        self.results_frame.pack(
+            fill="both",
+            expand=True,
+            padx=COLORS["padding"],
+            pady=(0, COLORS["padding"]),
+        )
 
     
     def load_results_data(self):
@@ -612,12 +644,15 @@ class StudentResultsWindow(ctk.CTkToplevel):
         self.student = self.session.query(Student).filter_by(id=self.student_id).first()
         
         if not self.student:
-            messagebox.showerror("Error", "Student not found")
-            self.destroy()
+            show_error(self, "Error", "Student not found")
+            close_modal_window(self)
             return
         
-        self.title_label.configure(text=f"Academic Results - {self.student.full_name}")
-        
+        if self.header_subtitle is not None:
+            self.header_subtitle.configure(
+                text=f"{self.student.full_name}  |  {self.student.student_id}  |  {self.student.class_name}"
+            )
+
         # Clear previous results
         for widget in self.results_frame.winfo_children():
             widget.destroy()
@@ -746,7 +781,13 @@ class StudentResultsWindow(ctk.CTkToplevel):
             if not subject:
                 continue
             
-            row_frame = ctk.CTkFrame(self.results_frame, fg_color=COLORS["bg_dark"], corner_radius=6)
+            row_frame = ctk.CTkFrame(
+                self.results_frame,
+                fg_color=COLORS["bg_main"],
+                corner_radius=COLORS["radius"],
+                border_width=1,
+                border_color=COLORS["border"],
+            )
             row_frame.pack(fill="x", pady=2, padx=5)
             
             # Subject name
@@ -975,12 +1016,33 @@ class StudentResultsWindow(ctk.CTkToplevel):
         
         term_value = self.term_var.get()
         term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
+
+        from models import ReportCard
+        from report_card_pdf import is_report_card_complete
+
+        report_card = self.session.query(ReportCard).filter_by(
+            student_id=self.student_id,
+            term=term,
+        ).first()
+        if not is_report_card_complete(report_card, self.student_id, term, self.session):
+            show_warning(
+                self,
+                "Incomplete Report Card",
+                "Complete the report card details in the Report Cards section before downloading.",
+            )
+            return
         
-        filename = filedialog.asksaveasfilename(
+        filename = ask_save_filename(
+            self,
             defaultextension=".pdf",
             filetypes=[("PDF files", "*.pdf")],
-            initialfile=f"report_card_{self.student.student_id}_term{term}.pdf",
-            title="Export Report Card"
+            initialfile=safe_export_filename(
+                self.student.full_name,
+                f"term{term}",
+                "report_card",
+                extension="pdf",
+            ),
+            title="Export Report Card",
         )
         
         if filename:
@@ -989,8 +1051,12 @@ class StudentResultsWindow(ctk.CTkToplevel):
                 success = generate_report_card(self.student_id, term, filename)
                 
                 if success:
-                    messagebox.showinfo("Success", f"Report card exported to {filename}")
+                    show_info(self, "Success", f"Report card exported to {filename}")
                 else:
-                    messagebox.showerror("Error", "Failed to generate report card. Please ensure the student has grades for this term.")
+                    show_error(
+                        self,
+                        "Error",
+                        "Failed to generate report card. Please ensure the student has grades for this term.",
+                    )
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+                show_error(self, "Error", f"Failed to export: {str(e)}")

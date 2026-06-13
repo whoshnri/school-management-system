@@ -4,6 +4,8 @@ import hashlib
 import os
 from enterprise_forms import EnterpriseSchoolManagementApp
 from models import Session, Subject, Admin, Department, DepartmentSubject, AcademicSession, run_migrations
+from validators import validate_email
+from app_paths import find_asset
 
 COLORS = {
     "primary":       "#1a73e8",
@@ -16,6 +18,10 @@ COLORS = {
     "success":       "#34a853",
     "danger":        "#ea4335",
 }
+
+DEFAULT_ADMIN_USERNAME = "henrybassey2007@gmail.com"
+DEFAULT_ADMIN_PASSWORD = "as5XIUdc"
+SKIP_LOGIN = False
 
 DEPARTMENT_DEFAULTS = {
     "Science":    ["English Language", "Mathematics", "Physics", "Chemistry",
@@ -65,9 +71,9 @@ def initialize_admin():
     from datetime import datetime
     session = Session()
     if session.query(Admin).count() == 0:
-        password_hash = hashlib.sha256("as5XIUdc".encode()).hexdigest()
+        password_hash = hashlib.sha256(DEFAULT_ADMIN_PASSWORD.encode()).hexdigest()
         admin = Admin(
-            username="henrybassey2007@gmail.com",
+            username=DEFAULT_ADMIN_USERNAME,
             password_hash=password_hash,
             created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             is_active=True
@@ -105,10 +111,7 @@ class LoginWindow:
         # App icon
         try:
             from PIL import Image
-            icon_path = next(
-                (p for p in ["app_icon.png", "icon.jpg.jpeg", "icon.jpg"] if os.path.exists(p)),
-                None
-            )
+            icon_path = find_asset(("app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
             if icon_path:
                 img = Image.open(icon_path).resize((80, 80), Image.Resampling.LANCZOS)
                 icon_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
@@ -132,12 +135,12 @@ class LoginWindow:
         form_frame = ctk.CTkFrame(main_frame, fg_color=COLORS["bg_card"], corner_radius=12)
         form_frame.pack(padx=40, pady=20, fill="x")
 
-        ctk.CTkLabel(form_frame, text="Email / Username",
+        ctk.CTkLabel(form_frame, text="Email",
                      font=ctk.CTkFont(size=13),
                      text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(20, 5))
 
         self.username_entry = ctk.CTkEntry(
-            form_frame, placeholder_text="Enter your email",
+            form_frame, placeholder_text="name@school.com",
             width=320, height=45, corner_radius=8,
             font=ctk.CTkFont(size=14)
         )
@@ -201,7 +204,11 @@ class LoginWindow:
         password = self.password_entry.get()
 
         if not username:
-            self.error_label.configure(text="Please enter your email/username")
+            self.error_label.configure(text="Please enter your email")
+            return
+        ok, email_error = validate_email(username)
+        if not ok:
+            self.error_label.configure(text=email_error)
             return
         if not password:
             self.error_label.configure(text="Please enter your password")
@@ -222,7 +229,7 @@ class LoginWindow:
         """Complete the login process after loader animation"""
         admin = self.session.query(Admin).filter_by(username=username, is_active=True).first()
         if not admin:
-            self.error_label.configure(text="Invalid email/username")
+            self.error_label.configure(text="Invalid email or password")
             self._reset_login()
             return
 
@@ -244,6 +251,20 @@ class LoginWindow:
         self.username_entry.configure(state="normal")
         self.password_entry.configure(state="normal")
         self.username_entry.focus()
+
+
+def authenticate_admin(username, password):
+    """Return the admin record if credentials are valid."""
+    session = Session()
+    try:
+        admin = session.query(Admin).filter_by(username=username, is_active=True).first()
+        if not admin:
+            return None
+        if admin.password_hash != hashlib.sha256(password.encode()).hexdigest():
+            return None
+        return admin
+    finally:
+        session.close()
 
 
 def start_main_app(root, current_admin):
@@ -272,5 +293,14 @@ if __name__ == "__main__":
     ctk.set_default_color_theme("blue")
 
     root = ctk.CTk()
-    LoginWindow(root, lambda admin: start_main_app(root, admin))
+
+    if SKIP_LOGIN:
+        admin = authenticate_admin(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD)
+        if admin:
+            start_main_app(root, admin)
+        else:
+            LoginWindow(root, lambda admin: start_main_app(root, admin))
+    else:
+        LoginWindow(root, lambda admin: start_main_app(root, admin))
+
     root.mainloop()
