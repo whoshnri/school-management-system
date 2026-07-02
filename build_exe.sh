@@ -18,15 +18,16 @@ source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r req.txt pyinstaller
 
-pyinstaller main.spec --noconfirm
+pyinstaller main.spec --distpath dist/android --noconfirm
 
-if [[ -f dist/GFA-Admin-Panel ]]; then
+if [[ -f dist/android/GFA-Admin-Panel ]]; then
   echo
-  echo "Success: dist/GFA-Admin-Panel"
-elif [[ -f dist/GFA-Admin-Panel.exe ]]; then
+  echo "Success: dist/android/GFA-Admin-Panel"
+elif [[ -f dist/android/GFA-Admin-Panel.exe ]]; then
   echo
-  echo "Success: dist/GFA-Admin-Panel.exe"
+  echo "Success: dist/android/GFA-Admin-Panel.exe"
 else
   echo "Build failed."
   exit 1
 fi
+

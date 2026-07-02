@@ -19,11 +19,11 @@ echo.
 echo IMPORTANT: Set SKIP_LOGIN = False in main.py before distributing the exe.
 echo.
 
-pyinstaller main.spec --noconfirm
+pyinstaller main.spec --distpath dist/android --noconfirm
 
-if exist "dist\GFA-Admin-Panel.exe" (
+if exist "dist\android\GFA-Admin-Panel.exe" (
     echo.
-    echo Success: dist\GFA-Admin-Panel.exe
+    echo Success: dist\android\GFA-Admin-Panel.exe
     echo The database file will be created beside the exe on first run.
 ) else (
     echo.
