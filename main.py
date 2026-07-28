@@ -21,7 +21,7 @@ COLORS = {
 
 DEFAULT_ADMIN_USERNAME = "henrybassey2007@gmail.com"
 DEFAULT_ADMIN_PASSWORD = "as5XIUdc"
-SKIP_LOGIN = False
+SKIP_LOGIN = True
 
 DEPARTMENT_DEFAULTS = {
     "Science":    ["English Language", "Mathematics", "Physics", "Chemistry",
@@ -90,7 +90,7 @@ class LoginWindow:
         self.session = Session()
         self.is_loading = False
 
-        self.root.title("GFA Admin Panel")
+        self.root.title("Admin Panel")
         self.root.geometry("450x600")
         self.root.resizable(False, False)
 
@@ -111,7 +111,7 @@ class LoginWindow:
         # App icon
         try:
             from PIL import Image
-            icon_path = find_asset(("app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
+            icon_path = find_asset(("assets/school-logo.jpeg", "school-logo.jpeg", "app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
             if icon_path:
                 img = Image.open(icon_path).resize((80, 80), Image.Resampling.LANCZOS)
                 icon_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
@@ -120,7 +120,7 @@ class LoginWindow:
             pass
 
         ctk.CTkLabel(
-            logo_frame, text="GFA Admin Panel",
+            logo_frame, text="Admin Panel",
             font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
             text_color=COLORS["primary"]
         ).pack(pady=(10, 0))
@@ -272,7 +272,7 @@ def start_main_app(root, current_admin):
         widget.destroy()
 
     root.geometry("1200x800")
-    root.title("GFA Admin Panel")
+    root.title("Admin Panel")
     root.resizable(True, True)
 
     root.update_idletasks()

@@ -8,7 +8,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from models import Session, Student, Fee
 from app_paths import find_asset
 
@@ -68,8 +68,8 @@ def _label_value_style(label_cols=(0, 2)):
 
 
 def _header_block():
-    header_path = find_asset(("school_header.png",))
-    if header_path:
+    header_path = find_asset(("assets/report-banner.png", "report-banner.png", "school_header.png"))
+    if header_path and os.path.exists(header_path):
         return [
             Image(str(header_path), width=USABLE_W, height=HEADER_IMG_H),
             Spacer(1, SECTION_GAP),
@@ -150,6 +150,17 @@ def generate_fee_receipt(student_id, term, output_path):
 
         story = []
         story.extend(_header_block())
+        
+        pic_path = student.profile_picture_path
+        if pic_path and os.path.exists(pic_path):
+            try:
+                img = Image(pic_path, width=1.2*inch, height=1.2*inch)
+                img.hAlign = 'LEFT'
+                story.append(img)
+                story.append(Spacer(1, BLOCK_GAP))
+            except Exception:
+                pass
+                
         story.append(Spacer(1, BLOCK_GAP))
         story.append(Paragraph("SCHOOL FEES PAYMENT RECEIPT", title_style))
         story.append(Paragraph(f"Receipt No: {receipt_no}", subtitle_style))
@@ -165,11 +176,21 @@ def generate_fee_receipt(student_id, term, output_path):
         story.append(Spacer(1, SECTION_GAP))
 
         story.append(Paragraph("Payment Summary", section_style))
+        
+        amt_style = ParagraphStyle(
+            'AmtRight', parent=styles['Normal'],
+            fontSize=9, textColor=DARK, alignment=TA_RIGHT,
+        )
+        amt_bold_style = ParagraphStyle(
+            'AmtRightBold', parent=styles['Normal'],
+            fontSize=9, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT,
+        )
+        
         payment_rows = [
             ["Description", "Amount"],
-            ["Amount Due", f"₦{fee.amount_due:,.2f}"],
-            ["Amount Paid", f"₦{fee.amount_paid:,.2f}"],
-            ["Outstanding Balance", f"₦{balance:,.2f}"],
+            ["Amount Due", Paragraph(f"<strike>N</strike>{fee.amount_due:,.2f}", amt_style)],
+            ["Amount Paid", Paragraph(f"<strike>N</strike>{fee.amount_paid:,.2f}", amt_style)],
+            ["Outstanding Balance", Paragraph(f"<strike>N</strike>{balance:,.2f}", amt_bold_style)],
         ]
         payment_table = Table(payment_rows, colWidths=_widths(2.2, 1.0))
         payment_table.setStyle(TableStyle([
@@ -190,8 +211,6 @@ def generate_fee_receipt(student_id, term, output_path):
             ('BACKGROUND', (0, -1), (-1, -1), LBLUE),
         ]))
         story.append(payment_table)
-        story.append(Spacer(1, BLOCK_GAP))
-        story.append(Paragraph("PAID IN FULL", paid_style))
         story.append(Spacer(1, SECTION_GAP))
 
         sig_col = USABLE_W / 2
@@ -215,10 +234,6 @@ def generate_fee_receipt(student_id, term, output_path):
         ]))
         story.append(sig_table)
         story.append(Spacer(1, BLOCK_GAP))
-        story.append(Paragraph(
-            f"Generated on {issued_at.strftime('%B %d, %Y at %I:%M %p')}",
-            footer_style,
-        ))
 
         doc.build(story)
         return True

@@ -59,7 +59,8 @@ class DatePickerField(ctk.CTkFrame):
             font=ctk.CTkFont(size=font_size),
         )
         self._entry.pack(side="left", fill="x", expand=True)
-        self._entry.bind("<Key>", lambda _e: "break")
+        if self._on_change:
+            self._date_var.trace_add("write", lambda *args: self._on_change())
         self._entry.bind("<Button-1>", lambda _e: self._open_picker())
 
         self._button = ctk.CTkButton(
@@ -79,7 +80,13 @@ class DatePickerField(ctk.CTkFrame):
         return value.strftime("%Y-%m-%d")
 
     def get_date(self):
-        return self._date
+        val = self._date_var.get().strip()
+        if not val:
+            return None
+        try:
+            return dt_date.fromisoformat(val)
+        except ValueError:
+            return None
 
     def set_date(self, value):
         if isinstance(value, str):
@@ -277,6 +284,9 @@ class ModalOptionPicker(ctk.CTkFrame):
 
     def set(self, value):
         self._value_var.set(value or "")
+
+    def update_options(self, options):
+        self._choice_options = list(options)
 
     def _close_popup(self):
         popup = self._popup
@@ -617,6 +627,62 @@ def close_modal_window(window, on_after=None, success_message=None):
             messagebox.showinfo("Saved", success_message)
 
 
+def _release_all_grabs(window):
+    """Release grabs from all CTkToplevel windows and return them in stacking order."""
+    import customtkinter as ctk
+    grabbed = []
+    try:
+        root = window.winfo_toplevel()
+        # Walk all children to find toplevels with active grabs
+        for child in root.winfo_children():
+            try:
+                if isinstance(child, ctk.CTkToplevel) and child.winfo_exists():
+                    try:
+                        child.grab_release()
+                        grabbed.append(child)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Also check parent chain
+        current = window
+        while current is not None:
+            try:
+                if isinstance(current, ctk.CTkToplevel) and current.winfo_exists():
+                    try:
+                        current.grab_release()
+                        if current not in grabbed:
+                            grabbed.append(current)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            current = getattr(current, "master", None)
+    except Exception:
+        pass
+    return grabbed
+
+
+def _restore_all_grabs(grabbed_windows):
+    """Restore grabs on previously grabbed windows (topmost last)."""
+    import customtkinter as ctk
+    for win in grabbed_windows:
+        try:
+            if win.winfo_exists() and isinstance(win, ctk.CTkToplevel):
+                win.lift()
+        except Exception:
+            pass
+    # Only grab_set on the topmost one
+    if grabbed_windows:
+        topmost = grabbed_windows[-1]
+        try:
+            if topmost.winfo_exists() and isinstance(topmost, ctk.CTkToplevel):
+                topmost.grab_set()
+                topmost.focus_force()
+        except Exception:
+            pass
+
+
 def _release_grab(window):
     try:
         window.grab_release()
@@ -626,11 +692,13 @@ def _release_grab(window):
 
 def _restore_grab(window):
     try:
-        if window.winfo_exists():
+        import customtkinter as ctk
+        if window.winfo_exists() and isinstance(window, ctk.CTkToplevel):
             window.grab_set()
             window.focus_force()
     except Exception:
         pass
+
 
 
 def setup_modal_window(window, on_close=None):
@@ -641,35 +709,38 @@ def setup_modal_window(window, on_close=None):
 
 
 def ask_save_filename(parent, **kwargs):
-    dialog_parent = _messagebox_parent(parent) or parent
-    _release_grab(parent)
-    filename = filedialog.asksaveasfilename(parent=dialog_parent, **kwargs)
-    _restore_grab(parent)
+    grabbed = _release_all_grabs(parent)
+    try:
+        filename = filedialog.asksaveasfilename(parent=parent.winfo_toplevel(), **kwargs)
+    finally:
+        _restore_all_grabs(grabbed)
     return filename
 
 
 def show_info(parent, title, message):
-    dialog_parent = _messagebox_parent(parent) or parent
-    _release_grab(parent)
-    messagebox.showinfo(title, message, parent=dialog_parent)
-    _restore_grab(parent)
+    grabbed = _release_all_grabs(parent)
+    try:
+        messagebox.showinfo(title, message, parent=parent.winfo_toplevel())
+    finally:
+        _restore_all_grabs(grabbed)
 
 
 def show_error(parent, title, message):
-    dialog_parent = _messagebox_parent(parent) or parent
-    _release_grab(parent)
+    grabbed = _release_all_grabs(parent)
     try:
-        messagebox.showerror(title, message, parent=dialog_parent)
+        messagebox.showerror(title, message, parent=parent.winfo_toplevel())
     except Exception:
         messagebox.showerror(title, message)
-    _restore_grab(parent)
+    finally:
+        _restore_all_grabs(grabbed)
 
 
 def show_warning(parent, title, message):
-    dialog_parent = _messagebox_parent(parent) or parent
-    _release_grab(parent)
-    messagebox.showwarning(title, message, parent=dialog_parent)
-    _restore_grab(parent)
+    grabbed = _release_all_grabs(parent)
+    try:
+        messagebox.showwarning(title, message, parent=parent.winfo_toplevel())
+    finally:
+        _restore_all_grabs(grabbed)
 
 
 def create_modal_footer(parent, save_text, save_command, cancel_command):

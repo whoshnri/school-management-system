@@ -77,55 +77,76 @@ class StudentsListTab(ctk.CTkFrame):
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, padx=0, pady=(0, 15), sticky="ew")
 
+        top_row = ctk.CTkFrame(header_frame, fg_color="transparent")
+        top_row.pack(fill="x", padx=20, pady=(15, 0))
+
         ctk.CTkLabel(
-            header_frame,
+            top_row,
             text=TextLabelManager.get_header_text('student_directory'),
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=20, pady=15)
+        ).pack(side="left")
 
         # Student count badge
         self.count_label = ctk.CTkLabel(
-            header_frame,
+            top_row,
             text="0 students",
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=COLORS["text_secondary"]
         )
-        self.count_label.pack(side="left", padx=10, pady=15)
+        self.count_label.pack(side="left", padx=10)
 
+        # Filters frame on new row inside header
         filters_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        filters_frame.pack(side="right", padx=20, pady=15)
+        filters_frame.pack(fill="x", padx=20, pady=(10, 15))
 
-        ctk.CTkLabel(
-            filters_frame,
-            text="Class",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 8))
+        # Session
+        self.session_var = ctk.StringVar()
+        self.session_filter = ctk.CTkComboBox(filters_frame, variable=self.session_var, width=120, command=lambda _: self.load_students())
+        self.session_filter.pack(side="left", padx=(0, 5))
+        
+        # Dept
+        self.dept_var = ctk.StringVar()
+        self.dept_filter = ctk.CTkComboBox(filters_frame, variable=self.dept_var, width=120, command=lambda _: self.load_students())
+        self.dept_filter.pack(side="left", padx=5)
 
+        # Class
         self.class_filter_var = ctk.StringVar(value="All Classes")
         class_filter = ctk.CTkComboBox(
             filters_frame,
             variable=self.class_filter_var,
             values=CLASS_FILTER_OPTIONS,
             width=130,
-            height=40,
             command=lambda _value: self.load_students(),
             **input_style(),
         )
-        class_filter.pack(side="left", padx=(0, 12))
+        class_filter.pack(side="left", padx=5)
 
+        # Search
         self.search_var = ctk.StringVar()
         search_entry = ctk.CTkEntry(
             filters_frame,
             placeholder_text="Search by name or ID...",
             textvariable=self.search_var,
             width=240,
-            height=40,
             **input_style(),
         )
-        search_entry.pack(side="left")
+        search_entry.pack(side="left", padx=5)
         self.search_var.trace_add("write", lambda *args: self.load_students())
+        
+        self._load_filter_options()
+
+    def _load_filter_options(self):
+        from models import AcademicSession, Department
+        sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+        session_names = ["All Sessions"] + [s.name for s in sessions]
+        self.session_filter.configure(values=session_names)
+        self.session_var.set("All Sessions")
+
+        depts = self.session.query(Department).all()
+        dept_names = ["All Departments"] + [d.name for d in depts]
+        self.dept_filter.configure(values=dept_names)
+        self.dept_var.set("All Departments")
 
         # Main frame for the list
         self.students_list_frame = ctk.CTkScrollableFrame(
@@ -138,23 +159,41 @@ class StudentsListTab(ctk.CTkFrame):
         self.students_list_frame.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
 
         # Configure columns with proper weights
-        self.students_list_frame.grid_columnconfigure(0, weight=0, minsize=50)   # Row #
+        self.students_list_frame.grid_columnconfigure(0, weight=0, minsize=40)   # Row #
         self.students_list_frame.grid_columnconfigure(1, weight=1, minsize=100)  # ID
-        self.students_list_frame.grid_columnconfigure(2, weight=2, minsize=200)  # Name
-        self.students_list_frame.grid_columnconfigure(3, weight=0, minsize=80)   # Class
-        self.students_list_frame.grid_columnconfigure(4, weight=0, minsize=250)  # Actions
+        self.students_list_frame.grid_columnconfigure(2, weight=2, minsize=160)  # Name
+        self.students_list_frame.grid_columnconfigure(3, weight=1, minsize=100)  # Dept
+        self.students_list_frame.grid_columnconfigure(4, weight=0, minsize=80)   # Gender
+        self.students_list_frame.grid_columnconfigure(5, weight=0, minsize=80)   # Class
+        self.students_list_frame.grid_columnconfigure(6, weight=0, minsize=180)  # Actions
 
     def load_students(self):
         # Clear existing student list
         for widget in self.students_list_frame.winfo_children():
             widget.destroy()
 
-        search_term = self.search_var.get().lower().strip() if hasattr(self, 'search_var') else ""
-        class_filter = self.class_filter_var.get() if hasattr(self, 'class_filter_var') else "All Classes"
+        if not hasattr(self, 'session_var'):
+            return
 
-        students = self.session.query(Student).order_by(Student.full_name).all()
+        search_term = self.search_var.get().lower().strip()
+        class_filter = self.class_filter_var.get()
+        sess_name = self.session_var.get()
+        dept_name = self.dept_var.get()
+        
+        from models import AcademicSession, Department
+        query = self.session.query(Student)
+
+        if sess_name and sess_name != "All Sessions":
+            sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+            if sess: query = query.filter_by(session_id=sess.id)
+        if dept_name and dept_name != "All Departments":
+            dept = self.session.query(Department).filter_by(name=dept_name).first()
+            if dept: query = query.filter_by(dept_id=dept.id)
         if class_filter and class_filter != "All Classes":
-            students = [s for s in students if s.class_name == class_filter]
+            query = query.filter_by(class_name=class_filter)
+            
+        students = query.order_by(Student.full_name).all()
+
         if search_term:
             students = [
                 s for s in students
@@ -191,7 +230,7 @@ class StudentsListTab(ctk.CTkFrame):
             return
 
         # Headers with separate # column
-        headers = [("#", "center"), ("Student ID", "w"), ("Full Name", "w"), ("Class", "center"), ("Actions", "center")]
+        headers = [("#", "center"), ("Student ID", "w"), ("Full Name", "w"), ("Department", "w"), ("Gender", "center"), ("Class", "center"), ("Actions", "center")]
         for col, (header, anchor) in enumerate(headers):
             lbl = ctk.CTkLabel(
                 self.students_list_frame,
@@ -229,6 +268,25 @@ class StudentsListTab(ctk.CTkFrame):
                 anchor="w"
             ).grid(row=i, column=2, padx=15, pady=12, sticky="ew")
 
+            # Department
+            dept_name = student.department.name if getattr(student, "department", None) else "N/A"
+            ctk.CTkLabel(
+                self.students_list_frame,
+                text=dept_name,
+                font=ctk.CTkFont(family="Segoe UI", size=13),
+                text_color=COLORS["text_secondary"],
+                anchor="w"
+            ).grid(row=i, column=3, padx=15, pady=12, sticky="ew")
+
+            # Gender
+            ctk.CTkLabel(
+                self.students_list_frame,
+                text=student.sex,
+                font=ctk.CTkFont(family="Segoe UI", size=13),
+                text_color=COLORS["text_secondary"],
+                anchor="center"
+            ).grid(row=i, column=4, padx=15, pady=12, sticky="ew")
+
             # Class badge
             class_badge = ctk.CTkLabel(
                 self.students_list_frame,
@@ -240,11 +298,11 @@ class StudentsListTab(ctk.CTkFrame):
                 width=65,
                 height=28
             )
-            class_badge.grid(row=i, column=3, padx=15, pady=12)
+            class_badge.grid(row=i, column=5, padx=15, pady=12)
 
             # Actions frame
             actions_frame = ctk.CTkFrame(self.students_list_frame, fg_color="transparent")
-            actions_frame.grid(row=i, column=4, padx=15, pady=12)
+            actions_frame.grid(row=i, column=6, padx=15, pady=12)
 
             ctk.CTkButton(
                 actions_frame,
@@ -265,8 +323,8 @@ class StudentsListTab(ctk.CTkFrame):
                 width=60,
                 height=32,
                 corner_radius=8,
-                fg_color=COLORS["warning"],
-                hover_color="#e0a800",
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["primary_hover"],
                 font=ctk.CTkFont(family="Segoe UI", size=12)
             ).pack(side="left", padx=4)
 
@@ -488,116 +546,288 @@ class StudentsListTab(ctk.CTkFrame):
         edit_modal.bind("<Escape>", lambda e: close_modal_window(edit_modal))
 
 
-class FeeStructureModal(ctk.CTkToplevel):
-    """Edit global fee amounts by class and term."""
+class FeeItemEditorModal(ctk.CTkToplevel):
+    """Modal for editing fee items for a specific (class, dept, term)."""
 
-    def __init__(self, parent, session, on_saved=None, focus_class=None, focus_term=None):
+    def __init__(self, parent, session, class_name, dept_name, term, on_saved=None):
         super().__init__(parent)
         self.session = session
         self.on_saved = on_saved
-        self.entries = {}
-        self.saved_values = load_fee_structure_matrix(session)
+        self.class_name = class_name
+        self.dept_name = dept_name
+        self.term = term
 
-        self.title("Edit Fee Structure")
+        term_label = {1: "First Term", 2: "Second Term", 3: "Third Term"}.get(term, f"Term {term}")
+        self.title(f"Fee Items — {class_name} / {dept_name} / {term_label}")
         self.transient(parent)
         self.configure(fg_color=MODAL_STYLE["bg_main"])
-        center_toplevel(self, parent, 620, 420)
+        center_toplevel(self, parent, 600, 600)
 
         create_modal_header(
             self,
-            "Edit Fee Structure",
-            subtitle="Set the amount due for each class and term. Changes apply to all students in that class.",
+            f"Fee Structure: {class_name} · {dept_name} · {term_label}",
+            subtitle="Add fee items below. Amount must be a valid number.",
         )
 
+        import json
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=MODAL_STYLE["padding"], pady=(0, 8))
 
-        grid = ctk.CTkFrame(
-            body,
-            fg_color=MODAL_STYLE["bg_card"],
-            corner_radius=MODAL_STYLE["radius"],
-            border_width=1,
-            border_color=MODAL_STYLE["border"],
-        )
-        grid.pack(fill="both", expand=True)
-        grid.grid_columnconfigure(0, weight=2)
-        for col in range(1, 4):
-            grid.grid_columnconfigure(col, weight=1)
+        self.items_frame = ctk.CTkScrollableFrame(body, fg_color="transparent", height=300)
+        self.items_frame.pack(fill="both", expand=True)
 
-        ctk.CTkLabel(grid, text="Class", anchor="w").grid(
-            row=0, column=0, padx=12, pady=(12, 8), sticky="ew"
-        )
-        for col, (_, term_name) in enumerate(TERM_OPTIONS, start=1):
-            ctk.CTkLabel(
-                grid,
-                text=term_name,
-                anchor="center",
-                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-                text_color=MODAL_STYLE["text_secondary"],
-            ).grid(row=0, column=col, padx=8, pady=(12, 8), sticky="ew")
+        from fee_helpers import get_fee_structure
+        structure = get_fee_structure(session, class_name, term, dept_name)
+        self.item_rows = []
 
-        for row, class_name in enumerate(CLASS_OPTIONS, start=1):
-            ctk.CTkLabel(
-                grid,
-                text=class_name,
-                anchor="w",
-                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-                text_color=MODAL_STYLE["text_primary"],
-            ).grid(row=row, column=0, padx=12, pady=8, sticky="ew")
+        existing_items = []
+        if structure and structure.fee_items:
+            try:
+                existing_items = json.loads(structure.fee_items)
+            except Exception:
+                pass
 
-            for col, (term, _) in enumerate(TERM_OPTIONS, start=1):
-                amount = self.saved_values.get((class_name, term), 0)
-                entry = ctk.CTkEntry(
-                    grid,
-                    width=120,
-                    height=MODAL_STYLE["input_height"] - 4,
-                    text_color=MODAL_STYLE["text_primary"],
-                    placeholder_text="0.00",
-                    **input_style(),
-                )
-                entry.grid(row=row, column=col, padx=8, pady=8, sticky="ew")
-                if amount:
-                    entry.insert(0, f"{amount:.2f}")
-                self.entries[(class_name, term)] = entry
+        if not existing_items:
+            existing_items = [{"description": "", "amount": ""}]
 
-                if class_name == focus_class and term == focus_term:
-                    entry.focus_set()
-                    entry.select_range(0, "end")
+        for item in existing_items:
+            self.add_item_row(item.get("description", ""), item.get("amount", ""))
 
-        create_modal_footer(
-            self,
-            save_text="Save Structure",
-            save_command=self.save,
-            cancel_command=self._close,
-        )
+        ctk.CTkButton(
+            body, text="+ Add Fee Item", command=lambda: self.add_item_row("", ""),
+            fg_color=COLORS["secondary"], hover_color=COLORS["primary"], text_color="white",
+            width=150, height=36
+        ).pack(anchor="w", pady=(10, 0))
 
+        self.total_label = ctk.CTkLabel(body, text="Total: ₦0.00", font=ctk.CTkFont(size=18, weight="bold"))
+        self.total_label.pack(anchor="e", pady=(10, 0))
+
+        create_modal_footer(self, save_text="Save Structure", save_command=self.save, cancel_command=self._close)
         setup_modal_window(self, on_close=self._close)
+        self.calculate_total()
+
+    def add_item_row(self, desc="", amt=""):
+        row_frame = ctk.CTkFrame(self.items_frame, fg_color="transparent")
+        row_frame.pack(fill="x", pady=5)
+
+        desc_entry = ctk.CTkEntry(row_frame, placeholder_text="Item Description (e.g. Tuition)", width=250, **input_style())
+        desc_entry.pack(side="left", padx=(0, 10))
+        if desc:
+            desc_entry.insert(0, desc)
+
+        amt_entry = ctk.CTkEntry(row_frame, placeholder_text="Amount", width=150, **input_style())
+        amt_entry.pack(side="left", padx=(0, 10))
+        if amt:
+            amt_entry.insert(0, str(amt))
+
+        def enforce_numbers(e):
+            val = amt_entry.get()
+            cleaned = "".join([c for c in val if c.isdigit() or c == '.'])
+            parts = cleaned.split('.')
+            if len(parts) > 2:
+                cleaned = parts[0] + '.' + "".join(parts[1:])
+            if val != cleaned:
+                amt_entry.delete(0, 'end')
+                amt_entry.insert(0, cleaned)
+            self.calculate_total()
+
+        amt_entry.bind("<KeyRelease>", enforce_numbers)
+
+        del_btn = ctk.CTkButton(row_frame, text="X", width=36, fg_color=COLORS["danger"], hover_color="#c5221f",
+                                command=lambda: self.remove_item_row(row_frame))
+        del_btn.pack(side="left")
+
+        self.item_rows.append((row_frame, desc_entry, amt_entry))
+
+    def remove_item_row(self, row_frame):
+        for row in self.item_rows:
+            if row[0] == row_frame:
+                row_frame.destroy()
+                self.item_rows.remove(row)
+                break
+        self.calculate_total()
+
+    def calculate_total(self):
+        total = 0.0
+        for _, _, amt_entry in self.item_rows:
+            try:
+                val = amt_entry.get().strip()
+                if val:
+                    total += float(val)
+            except ValueError:
+                pass
+        self.total_label.configure(text=f"Total: ₦{total:,.2f}")
+        return total
 
     def _close(self):
         close_modal_window(self)
 
     def save(self):
-        try:
-            for class_name in CLASS_OPTIONS:
-                for term, _ in TERM_OPTIONS:
-                    raw = self.entries[(class_name, term)].get().strip()
-                    amount = float(raw) if raw else 0.0
-                    if amount < 0:
-                        raise ValueError(f"{class_name} term {term}: amount cannot be negative.")
-                    previous = self.saved_values.get((class_name, term), 0)
-                    if amount != previous:
-                        apply_fee_structure(self.session, class_name, term, amount)
+        import json
+        from fee_helpers import apply_fee_structure
+        items = []
+        total = 0.0
+        for _, desc_entry, amt_entry in self.item_rows:
+            desc = desc_entry.get().strip()
+            amt_str = amt_entry.get().strip()
+            if not desc and not amt_str:
+                continue
+            if not desc:
+                show_error(self, "Validation Error", "Description cannot be empty.")
+                return
+            if not amt_str:
+                show_error(self, "Validation Error", f"Amount for '{desc}' cannot be empty.")
+                return
+            try:
+                amt = float(amt_str)
+                if amt < 0:
+                    raise ValueError
+            except ValueError:
+                show_error(self, "Validation Error", f"Amount for '{desc}' must be a positive number.")
+                return
+            items.append({"description": desc, "amount": amt})
+            total += amt
 
-            close_modal_window(
-                self,
-                on_after=self.on_saved,
-                success_message="Fee structure updated and applied to all students.",
-            )
-        except ValueError as exc:
-            show_error(self, "Validation Error", str(exc))
+        try:
+            apply_fee_structure(self.session, self.class_name, self.term, total, json.dumps(items), self.dept_name)
+            close_modal_window(self, on_after=self.on_saved, success_message="Fee structure saved.")
         except Exception as exc:
             self.session.rollback()
-            show_error(self, "Error", f"Failed to save fee structure: {exc}")
+            show_error(self, "Error", f"Failed to save: {exc}")
+
+
+class FeeStructureModal(ctk.CTkToplevel):
+    """Tabbed overview modal showing fee status for all class/dept/term combos."""
+
+    def __init__(self, parent, session, on_saved=None):
+        super().__init__(parent)
+        self.session = session
+        self.on_saved = on_saved
+
+        self.title("Fee Structure Overview")
+        self.transient(parent)
+        self.configure(fg_color=MODAL_STYLE["bg_main"])
+        center_toplevel(self, parent, 700, 500)
+
+        create_modal_header(
+            self,
+            "Fee Structure Overview",
+            subtitle="Set fees per class, department, and term. Click a cell to edit.",
+        )
+
+        # Tabs for classes
+        self.tab_view = ctk.CTkTabview(
+            self,
+            fg_color=COLORS["bg_card"],
+            segmented_button_fg_color=COLORS["border"],
+            segmented_button_selected_color=COLORS["primary"],
+            segmented_button_selected_hover_color=COLORS["primary_hover"],
+            segmented_button_unselected_color="#e0e0e0",
+            segmented_button_unselected_hover_color=COLORS["primary_hover"],
+            text_color="white",
+            text_color_disabled=COLORS["text_secondary"],
+            corner_radius=12,
+        )
+        self.tab_view.pack(fill="both", expand=True, padx=MODAL_STYLE["padding"], pady=(0, 8))
+
+        from fee_helpers import CLASS_OPTIONS, DEPT_OPTIONS, TERM_OPTIONS
+        self.class_options = CLASS_OPTIONS
+        self.dept_options = DEPT_OPTIONS
+        self.term_options = TERM_OPTIONS
+
+        for cls in self.class_options:
+            self.tab_view.add(cls)
+
+        self._build_grids()
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=MODAL_STYLE["padding"], pady=(0, MODAL_STYLE["padding"]))
+        ctk.CTkButton(
+            footer, text="Close", command=self._close,
+            fg_color=COLORS["border"], text_color=COLORS["text_primary"],
+            hover_color=COLORS["bg_card"], width=100, height=36, corner_radius=8
+        ).pack(side="right")
+
+        setup_modal_window(self, on_close=self._close)
+
+    def _build_grids(self):
+        from fee_helpers import load_fee_structure_matrix
+        matrix = load_fee_structure_matrix(self.session)
+
+        for cls in self.class_options:
+            tab = self.tab_view.tab(cls)
+            # Clear any existing widgets
+            for w in tab.winfo_children():
+                w.destroy()
+
+            tab.grid_columnconfigure(0, weight=1, minsize=100)
+            for j in range(len(self.term_options)):
+                tab.grid_columnconfigure(j + 1, weight=1, minsize=140)
+
+            # Column headers (Terms)
+            ctk.CTkLabel(
+                tab, text="Department",
+                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                text_color=COLORS["text_secondary"]
+            ).grid(row=0, column=0, padx=10, pady=(15, 10), sticky="w")
+
+            for j, (term_num, term_label) in enumerate(self.term_options):
+                ctk.CTkLabel(
+                    tab, text=term_label,
+                    font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                    text_color=COLORS["text_secondary"]
+                ).grid(row=0, column=j + 1, padx=10, pady=(15, 10))
+
+            # Rows (Departments)
+            for i, dept in enumerate(self.dept_options):
+                ctk.CTkLabel(
+                    tab, text=dept,
+                    font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                    text_color=COLORS["text_primary"]
+                ).grid(row=i + 1, column=0, padx=10, pady=8, sticky="w")
+
+                for j, (term_num, term_label) in enumerate(self.term_options):
+                    key = (cls, term_num, dept)
+                    structure = matrix.get(key)
+
+                    if structure and structure.amount_due > 0:
+                        btn_text = f"Edit ₦{structure.amount_due:,.0f}"
+                        btn_fg = COLORS["success"]
+                        btn_hover = "#2d8f47"
+                        btn_text_color = "white"
+                    else:
+                        btn_text = "Not Set"
+                        btn_fg = COLORS["danger"]
+                        btn_hover = "#c5221f"
+                        btn_text_color = "white"
+
+                    ctk.CTkButton(
+                        tab,
+                        text=btn_text,
+                        fg_color=btn_fg,
+                        hover_color=btn_hover,
+                        text_color=btn_text_color,
+                        font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                        width=130, height=36, corner_radius=8,
+                        command=lambda c=cls, d=dept, t=term_num: self._open_editor(c, d, t),
+                    ).grid(row=i + 1, column=j + 1, padx=8, pady=8)
+
+    def _open_editor(self, class_name, dept_name, term):
+        FeeItemEditorModal(
+            self, self.session,
+            class_name=class_name,
+            dept_name=dept_name,
+            term=term,
+            on_saved=self._on_item_saved,
+        )
+
+    def _on_item_saved(self):
+        self._build_grids()
+        if self.on_saved:
+            self.on_saved()
+
+    def _close(self):
+        close_modal_window(self)
 
 
 class SchoolFeesTab(ctk.CTkFrame):
@@ -717,14 +947,11 @@ class SchoolFeesTab(ctk.CTkFrame):
         return class_name, term
 
     def open_fee_structure_modal(self):
-        class_name, term = self._selected_scope()
         root = self.winfo_toplevel()
         FeeStructureModal(
             root,
             self.session,
             on_saved=self.load_fees,
-            focus_class=class_name,
-            focus_term=term,
         )
 
     def load_fees(self):
@@ -951,6 +1178,9 @@ class AdminSettingsTab(ctk.CTkFrame):
         
         # SECTION 2: REGISTER NEW ADMIN
         self.setup_register_admin_section()
+        
+        # SECTION 3: MANAGE ADMINS
+        self.setup_manage_admins_section()
 
     def setup_update_password_section(self):
         update_frame = ctk.CTkFrame(self.scroll_frame, fg_color=COLORS["bg_card"], corner_radius=12)
@@ -1029,6 +1259,91 @@ class AdminSettingsTab(ctk.CTkFrame):
             hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
         ).pack(side="left")
+
+    def setup_manage_admins_section(self):
+        manage_frame = ctk.CTkFrame(self.scroll_frame, fg_color=COLORS["bg_card"], corner_radius=12)
+        manage_frame.grid(row=2, column=0, padx=5, pady=(20, 20), sticky="ew")
+        
+        ctk.CTkLabel(
+            manage_frame,
+            text="Manage Admins",
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(anchor="w", padx=30, pady=(20, 5))
+        
+        ctk.CTkLabel(
+            manage_frame,
+            text="View and remove administrators from the system.",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(anchor="w", padx=30, pady=(0, 20))
+        
+        # Admin list container
+        self.admins_list_frame = ctk.CTkFrame(manage_frame, fg_color="transparent")
+        self.admins_list_frame.pack(fill="x", padx=30, pady=(0, 25))
+        
+        self.load_admins()
+
+    def load_admins(self):
+        for widget in self.admins_list_frame.winfo_children():
+            widget.destroy()
+            
+        from models import Admin
+        admins = self.session.query(Admin).order_by(Admin.username).all()
+        
+        # Headers
+        header_row = ctk.CTkFrame(self.admins_list_frame, fg_color="transparent")
+        header_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(header_row, text="Username", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(header_row, text="Created At", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(header_row, text="Actions", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="center").pack(side="right", padx=5)
+        
+        for admin in admins:
+            row = ctk.CTkFrame(self.admins_list_frame, fg_color="transparent")
+            row.pack(fill="x", pady=4)
+            
+            # Highlight current admin
+            is_current = (self.current_admin and admin.id == self.current_admin.id)
+            display_name = f"{admin.username} (You)" if is_current else admin.username
+            
+            ctk.CTkLabel(row, text=display_name, font=ctk.CTkFont(size=13), text_color=COLORS["text_primary"], width=150, anchor="w").pack(side="left", padx=5)
+            ctk.CTkLabel(row, text=admin.created_at, font=ctk.CTkFont(size=12), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
+            
+            if is_current or len(admins) <= 1:
+                # Disabled button
+                ctk.CTkButton(
+                    row, text="Remove", width=70, height=28, corner_radius=6,
+                    fg_color=COLORS["bg_dark"], text_color=COLORS["text_secondary"],
+                    state="disabled"
+                ).pack(side="right", padx=5)
+            else:
+                ctk.CTkButton(
+                    row, text="Remove", width=70, height=28, corner_radius=6,
+                    fg_color=COLORS["danger"], hover_color="#c9302c",
+                    command=lambda a_id=admin.id, u=admin.username: self.handle_remove_admin(a_id, u)
+                ).pack(side="right", padx=5)
+
+    def handle_remove_admin(self, admin_id, username):
+        confirm = messagebox.askyesno(
+            "Remove Admin",
+            f"Are you sure you want to remove administrator '{username}'?\n\nThey will no longer have access to the system.",
+            icon="warning"
+        )
+        if not confirm:
+            return
+            
+        from models import Admin
+        admin_to_delete = self.session.query(Admin).filter_by(id=admin_id).first()
+        if admin_to_delete:
+            self.session.delete(admin_to_delete)
+            try:
+                self.session.commit()
+                messagebox.showinfo("Success", f"Administrator '{username}' has been removed.")
+                self.load_admins()
+            except Exception as e:
+                self.session.rollback()
+                messagebox.showerror("Database Error", f"Could not remove admin: {e}")
 
     def create_field(self, parent, label_text, value="", placeholder="", is_password=False, readonly=False):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1169,15 +1484,45 @@ class AdminSettingsTab(ctk.CTkFrame):
             messagebox.showerror("Error", f"Failed to register admin: {str(e)}")
 
 
+class DashboardTab(ctk.CTkFrame):
+    def __init__(self, parent, session):
+        super().__init__(parent, fg_color="transparent")
+        self.session = session
+        
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        
+        import os
+        from PIL import Image
+        from app_paths import find_asset
+        
+        banner_path = find_asset(("assets/school-ad-banner.png", "school-ad-banner.png"))
+        if banner_path and os.path.exists(banner_path):
+            try:
+                img = Image.open(banner_path)
+                width, height = img.size
+                aspect_ratio = width / height
+                new_width = 800
+                new_height = int(new_width / aspect_ratio)
+                img = img.resize((new_width, new_height))
+                photo = ctk.CTkImage(light_image=img, dark_image=img, size=(new_width, new_height))
+                
+                label = ctk.CTkLabel(self, image=photo, text="")
+                label.pack(expand=True, fill="both", padx=20, pady=20)
+            except Exception as e:
+                ctk.CTkLabel(self, text=f"Dashboard\nError loading banner: {e}").pack(expand=True)
+        else:
+            ctk.CTkLabel(self, text="Dashboard\n(Banner ad not found)").pack(expand=True)
+
 class EnterpriseSchoolManagementApp:
     def __init__(self, root, current_admin=None):
         self.root = root
         self.current_admin = current_admin
-        self.root.title("GFA Admin Panel")
+        self.root.title("Admin Panel")
         self.session = Session()
 
         # Configure grid layout (1x2)
-        self.root.grid_columnconfigure(0, minsize=220)  # Sidebar fixed width
+        self.root.grid_columnconfigure(0, minsize=180)  # Sidebar fixed width
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
@@ -1186,11 +1531,11 @@ class EnterpriseSchoolManagementApp:
         enable_mousewheel_scrolling(self.root)
 
         # Select default frame
-        self.select_frame_by_name("Student Registration")
+        self.select_frame_by_name("Dashboard")
 
     def setup_sidebar(self):
         self.navigation_frame = ctk.CTkFrame(
-            self.root, corner_radius=0, fg_color=COLORS["bg_dark"], width=220
+            self.root, corner_radius=0, fg_color=COLORS["bg_dark"], width=180
         )
         self.navigation_frame.grid(row=0, column=0, sticky="nsew")
         self.navigation_frame.grid_propagate(False)
@@ -1207,11 +1552,11 @@ class EnterpriseSchoolManagementApp:
         try:
             import os
             from PIL import Image
-            icon_path = find_asset(("app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
+            icon_path = find_asset(("assets/school-logo.jpeg", "school-logo.jpeg", "app_icon.png"))
             if icon_path:
-                icon_image = Image.open(icon_path).resize((40, 40), Image.Resampling.LANCZOS)
+                icon_image = Image.open(icon_path).resize((80, 80), Image.Resampling.LANCZOS)
                 icon_photo = ctk.CTkImage(
-                    light_image=icon_image, dark_image=icon_image, size=(40, 40)
+                    light_image=icon_image, dark_image=icon_image, size=(80, 80)
                 )
                 ctk.CTkLabel(logo_inner, image=icon_photo, text="").pack()
             else:
@@ -1229,7 +1574,7 @@ class EnterpriseSchoolManagementApp:
 
         ctk.CTkLabel(
             logo_inner,
-            text="GFA Admin Panel",
+            text="Admin Panel",
             font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
             text_color=COLORS["text_primary"],
         ).pack(pady=(10, 0))
@@ -1245,6 +1590,7 @@ class EnterpriseSchoolManagementApp:
         nav_scroll.grid_columnconfigure(0, weight=1)
 
         nav_items = [
+            ("Dashboard", "Dashboard"),
             (TextLabelManager.get_nav_text('register'), "Student Registration"),
             (TextLabelManager.get_nav_text('students'), "Students List"),
             (TextLabelManager.get_nav_text('fees'), "School Fees"),
@@ -1279,28 +1625,34 @@ class EnterpriseSchoolManagementApp:
         logout_btn = ctk.CTkButton(
             bottom_frame,
             corner_radius=8,
-            height=46,
+            height=36,
             text="Logout",
             fg_color=COLORS["danger"],
             text_color=COLORS["nav_active_text"],
             hover_color="#c9302c",
             anchor="center",
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
             command=self.logout,
         )
         logout_btn.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+
+    def logout(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        from main import LoginWindow, start_main_app
+        LoginWindow(self.root, lambda admin: start_main_app(self.root, admin))
 
     def _create_nav_button(self, parent, text, frame_name):
         btn = ctk.CTkButton(
             parent,
             corner_radius=8,
-            height=46,
+            height=36,
             text=text,
             fg_color=COLORS["bg_dark"],
             text_color=COLORS["nav_inactive_text"],
             hover_color=COLORS["primary"],
             anchor="center",
-            font=ctk.CTkFont(family="Segoe UI", size=14),
+            font=ctk.CTkFont(family="Segoe UI", size=13),
             command=lambda n=frame_name: self.select_frame_by_name(n),
         )
         btn._nav_active = False
@@ -1350,6 +1702,7 @@ class EnterpriseSchoolManagementApp:
         from departments_tab import DepartmentsTab
         from report_cards_tab import ReportCardsTab
 
+        self.dashboard_frame = DashboardTab(self.root, self.session)
         self.students_list_frame = StudentsListTab(self.root, self.session, on_student_deleted_callback=self.refresh_data)
         self.school_fees_frame = SchoolFeesTab(self.root, self.session)
         self.registration_frame = EnhancedStudentRegistrationTab(self.root, self.session, on_student_added_callback=self.refresh_data)
@@ -1367,6 +1720,7 @@ class EnterpriseSchoolManagementApp:
 
         # Frame mapping
         frames = {
+            "Dashboard": self.dashboard_frame,
             "Students List": self.students_list_frame,
             "School Fees": self.school_fees_frame,
             "Student Registration": self.registration_frame,
@@ -1391,29 +1745,4 @@ class EnterpriseSchoolManagementApp:
         self.students_list_frame.load_students()
         if hasattr(self, "report_cards_frame"):
             self.report_cards_frame.load_students()
-    
-    def logout(self):
-        """Logout and return to login screen."""
-        confirm = messagebox.askyesno(
-            "Confirm Logout",
-            "Are you sure you want to logout?",
-            icon="question"
-        )
-        if confirm:
-            # Close current window
-            self.root.destroy()
-            
-            # Create new root window for login
-            import tkinter as tk
-            new_root = tk.Tk()
-            
-            # Import and show login window
-            from main import LoginWindow
-            def on_login_success(admin):
-                new_root.destroy()
-                root = tk.Tk()
-                EnterpriseSchoolManagementApp(root, admin)
-                root.mainloop()
-            
-            LoginWindow(new_root, on_login_success)
-            new_root.mainloop()
+

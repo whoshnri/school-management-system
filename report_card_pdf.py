@@ -50,9 +50,11 @@ PRINCIPAL_SIGNATURE_LABEL = "Principal"
 PARENT_SIGNATURE_LABEL = "Parent/Guardian"
 
 
-def _widths(*weights):
+def _widths(*weights, total_w=None):
+    if total_w is None:
+        total_w = USABLE_W
     total = float(sum(weights))
-    return [USABLE_W * (weight / total) for weight in weights]
+    return [total_w * (weight / total) for weight in weights]
 
 
 def calculate_class_position(student_id, class_name, term, db):
@@ -155,7 +157,7 @@ def _grid_style(num_rows, font_size=8, center_from=1, label_cols=()):
 
 
 def _header_block():
-    header_path = find_asset(("school_header.png",))
+    header_path = find_asset(("assets/report-banner.png", "report-banner.png", "school_header.png"))
     if header_path:
         return [
             Image(str(header_path), width=USABLE_W, height=HEADER_IMG_H),
@@ -213,6 +215,31 @@ def _info_table(student, term):
         ["Class:", student.class_name, "Term:", term_name],
         ["Sex:", student.sex, "Session:", session_name],
     ]
+    pic_path = getattr(student, 'profile_picture_path', None)
+    if pic_path:
+        abs_pic = os.path.join(os.path.dirname(os.path.abspath(__file__)), pic_path)
+        if os.path.exists(abs_pic):
+            table = Table(data, colWidths=_widths(1.05, 1.55, 1.05, 1.55, total_w=USABLE_W - 1.2*inch))
+            table.setStyle(_label_value_style())
+            try:
+                from PIL import Image as PILImage
+                with PILImage.open(abs_pic) as pil_img:
+                    w, h = pil_img.size
+                    aspect = h / float(w)
+                    target_w = 1.1 * inch
+                    target_h = target_w * aspect
+            except Exception:
+                target_w = 1.1 * inch
+                target_h = 1.1 * inch
+            img = Image(abs_pic, width=target_w, height=target_h)
+            outer_table = Table([[img, table]], colWidths=[1.2*inch, USABLE_W - 1.2*inch])
+            outer_table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (0,0), 'LEFT'),
+                ('ALIGN', (1,0), (1,0), 'RIGHT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+            return outer_table
+
     table = Table(data, colWidths=_widths(1.05, 1.55, 1.05, 1.55))
     table.setStyle(_label_value_style())
     return table
@@ -223,10 +250,23 @@ def _fetch_marks(db, student_id, term):
         Mark.student_id == student_id,
         Mark.term == term,
     ).all()
+    
+    student = db.query(Student).filter_by(id=student_id).first()
+    class_name = student.class_name
+    
     result = []
     for mark, subject in rows:
         grade = mark.grade or GradeCalculator.calculate_grade(mark.total)
         remark = GradeCalculator.get_remark(mark.total)
+        
+        class_marks = db.query(Mark).join(Student).filter(
+            Student.class_name == class_name,
+            Mark.subject_id == mark.subject_id,
+            Mark.term == term
+        ).all()
+        class_marks.sort(key=lambda m: m.total, reverse=True)
+        pos = next((i + 1 for i, m in enumerate(class_marks) if m.student_id == student_id), None)
+        
         result.append((
             subject.subject_name,
             mark.continuous_assessment,
@@ -234,6 +274,7 @@ def _fetch_marks(db, student_id, term):
             mark.total,
             grade,
             remark,
+            pos,
         ))
     return result
 
@@ -242,22 +283,22 @@ def _grades_table(marks_current, prev_marks=None, prev_label="Previous Total"):
     if prev_marks is not None:
         header = [[
             "Subject", "CA (30)", "Exam (70)", "Total (100)",
-            prev_label, "Grade", "Remark",
+            prev_label, "Position", "Grade", "Remark",
         ]]
-        col_widths = _widths(2.8, 0.75, 0.75, 0.85, 0.95, 0.6, 1.3)
-        prev_map = {name: total for name, _, _, total, _, _ in prev_marks}
+        col_widths = _widths(2.7, 0.75, 0.75, 0.85, 0.95, 0.75, 0.6, 1.3)
+        prev_map = {name: total for name, _, _, total, _, _, _ in prev_marks}
     else:
-        header = [["Subject", "CA (30)", "Exam (70)", "Total (100)", "Grade", "Remark"]]
-        col_widths = _widths(3.2, 0.8, 0.8, 0.9, 0.65, 1.65)
+        header = [["Subject", "CA (30)", "Exam (70)", "Total (100)", "Position", "Grade", "Remark"]]
+        col_widths = _widths(3.0, 0.8, 0.8, 0.9, 0.8, 0.65, 1.65)
         prev_map = {}
 
     rows = []
-    for name, ca, exam, total, grade, remark in marks_current:
+    for name, ca, exam, total, grade, remark, pos in marks_current:
         row = [name, f"{ca:.1f}", f"{exam:.1f}", f"{total:.1f}"]
         if prev_marks is not None:
             prev_total = prev_map.get(name)
             row.append(f"{prev_total:.1f}" if prev_total is not None else "—")
-        row.extend([grade, remark])
+        row.extend([ordinal(pos) if pos else "—", grade, remark])
         rows.append(row)
 
     table = Table(header + rows, colWidths=col_widths, repeatRows=1)
@@ -358,6 +399,167 @@ def _grade_legend_table():
     return table
 
 
+def _invoice_bio_table(student, term):
+    """Student bio table for the invoice page."""
+    term_name = TERM_NAMES.get(term, f"Term {term}")
+    dept_name = student.department.name if getattr(student, 'department', None) else "N/A"
+    session_name = "—"
+    if hasattr(student, 'academic_session') and student.academic_session:
+        session_name = student.academic_session.name
+    data = [
+        ["Student Name:", student.full_name, "Student ID:", student.student_id],
+        ["Class:", student.class_name, "Department:", dept_name],
+        ["Sex:", student.sex, "Term:", term_name],
+    ]
+    table = Table(data, colWidths=_widths(1.05, 1.55, 1.05, 1.55))
+    table.setStyle(_label_value_style())
+    return table
+
+
+def _invoice_page(db, student, term):
+    """Build story elements for the fees invoice page."""
+    from reportlab.platypus import PageBreak
+    from fee_helpers import get_student_fee_breakdown, get_student_outstanding_fees
+
+    title_style, section_style, body_style, footer_style = _base_styles()
+    invoice_title = ParagraphStyle(
+        'InvoiceTitle', parent=title_style,
+        fontSize=14, spaceAfter=4,
+    )
+    elements = []
+
+    # Page break before invoice
+    elements.append(PageBreak())
+
+    # Banner header
+    elements.extend(_header_block())
+    elements.append(Paragraph("FEES INVOICE", title_style))
+    elements.append(Spacer(1, 0.08 * inch))
+
+    # Invoice date
+    elements.append(Paragraph(
+        f"Date: {datetime.now().strftime('%B %d, %Y')}",
+        body_style,
+    ))
+    elements.append(Spacer(1, 0.08 * inch))
+
+    # Student bio
+    elements.append(_invoice_bio_table(student, term))
+    elements.append(Spacer(1, SECTION_GAP))
+
+    grand_total = 0.0
+
+    # Outstanding fees from previous/current terms
+    outstanding = get_student_outstanding_fees(db, student.id, term)
+    if outstanding:
+        elements.append(Paragraph("Outstanding Fees", section_style))
+
+        header = [["Term", "Amount Due", "Amount Paid", "Balance"]]
+        rows = []
+        outstanding_total = 0.0
+        for t, due, paid, balance in outstanding:
+            t_name = TERM_NAMES.get(t, f"Term {t}")
+            rows.append([t_name, f"₦{due:,.2f}", f"₦{paid:,.2f}", f"₦{balance:,.2f}"])
+            outstanding_total += balance
+
+        # Subtotal row
+        rows.append(["", "", "Subtotal:", f"₦{outstanding_total:,.2f}"])
+
+        table = Table(header + rows, colWidths=_widths(1.5, 1.5, 1.5, 1.5))
+        style_cmds = _grid_style(len(rows), font_size=9)
+        table.setStyle(style_cmds)
+        elements.append(table)
+        elements.append(Spacer(1, SECTION_GAP))
+        grand_total += outstanding_total
+
+    # Next term fee breakdown
+    next_term = term + 1 if term < 3 else 3
+    next_term_name = TERM_NAMES.get(next_term, f"Term {next_term}")
+
+    # Only show "next term" section if it's actually a different term
+    if next_term != term or term == 3:
+        fee_items, next_amount_due = get_student_fee_breakdown(db, student.id, next_term)
+
+        if fee_items:
+            elements.append(Paragraph(f"Fee Breakdown — {next_term_name}", section_style))
+
+            header = [["Description", "Amount (₦)"]]
+            rows = []
+            items_total = 0.0
+            for item in fee_items:
+                desc = item.get("description", "")
+                amt = item.get("amount", 0)
+                rows.append([desc, f"₦{amt:,.2f}"])
+                items_total += amt
+
+            rows.append(["Total", f"₦{items_total:,.2f}"])
+
+            table = Table(header + rows, colWidths=_widths(3, 2))
+            style_cmds = _grid_style(len(rows), font_size=9)
+            table.setStyle(style_cmds)
+            elements.append(table)
+            elements.append(Spacer(1, SECTION_GAP))
+            grand_total += items_total
+        elif next_amount_due > 0:
+            elements.append(Paragraph(f"Fee Breakdown — {next_term_name}", section_style))
+            header = [["Description", "Amount (₦)"]]
+            rows = [["School Fees", f"₦{next_amount_due:,.2f}"], ["Total", f"₦{next_amount_due:,.2f}"]]
+            table = Table(header + rows, colWidths=_widths(3, 2))
+            table.setStyle(_grid_style(len(rows), font_size=9))
+            elements.append(table)
+            elements.append(Spacer(1, SECTION_GAP))
+            grand_total += next_amount_due
+
+    # Grand total
+    if grand_total > 0:
+        grand_data = [["GRAND TOTAL", f"₦{grand_total:,.2f}"]]
+        grand_table = Table(grand_data, colWidths=_widths(3, 2))
+        grand_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), BLUE),
+            ('TEXTCOLOR', (0, 0), (-1, -1), WHITE),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 11),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), PAD_H),
+            ('RIGHTPADDING', (0, 0), (-1, -1), PAD_H),
+            ('BOX', (0, 0), (-1, -1), 0.75, BORD),
+        ]))
+        elements.append(grand_table)
+        elements.append(Spacer(1, 0.15 * inch))
+
+    # Payment instructions
+    elements.append(Paragraph("Payment Instructions", section_style))
+    instructions = Table(
+        [
+            ["Please make payment to the school account using any of the following methods:"],
+            ["1. Bank Transfer — Contact the school bursar for account details."],
+            ["2. Cash Payment — Pay directly at the school accounts office."],
+            ["3. Online Payment — Visit the school portal for online payment options."],
+            [""],
+            ["Please retain this invoice as proof of fees due. Present your receipt upon payment."],
+        ],
+        colWidths=[USABLE_W],
+    )
+    instructions.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LGREY),
+        ('TEXTCOLOR', (0, 0), (-1, -1), DARK),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('BOX', (0, 0), (-1, -1), 0.75, BORD),
+    ]))
+    elements.append(instructions)
+    elements.append(Spacer(1, 0.1 * inch))
+
+    return elements
+
+
 def generate_report_card(student_id, term, output_path):
     """Generate a PDF report card for a student."""
     db = Session()
@@ -400,7 +602,7 @@ def generate_report_card(student_id, term, output_path):
         story.append(Paragraph("Academic Performance", section_style))
         story.append(_grades_table(marks_current, prev_marks, prev_label))
 
-        avg = sum(total for _, _, _, total, _, _ in marks_current) / len(marks_current)
+        avg = sum(total for _, _, _, total, _, _, _ in marks_current) / len(marks_current) if marks_current else 0.0
         position, _total_students = calculate_class_position(
             student_id, student.class_name, term, db
         )
@@ -420,10 +622,16 @@ def generate_report_card(student_id, term, output_path):
 
         story.append(Paragraph("Grade Boundaries", section_style))
         story.append(_grade_legend_table())
-        story.append(Paragraph(
-            f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
-            footer_style,
-        ))
+        
+        if getattr(report_card, 'next_term_resumption_date', None):
+            resumption_style = ParagraphStyle(
+                'Resumption', parent=styles['Normal'],
+                fontSize=10, fontName='Helvetica-Bold', alignment=2, spaceBefore=20, textColor=DARK
+            )
+            story.append(Paragraph(f"Next Term Resumption Date: {report_card.next_term_resumption_date}", resumption_style))
+
+        # Add invoice page
+        story.extend(_invoice_page(db, student, term))
 
         doc.build(story)
         return True
@@ -433,3 +641,4 @@ def generate_report_card(student_id, term, output_path):
         return False
     finally:
         db.close()
+

@@ -229,93 +229,85 @@ class MarksEntryTab(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
+        self.subjects = self.session.query(Subject).all()
+        self.entries = {}
         self.setup_ui()
         self.load_subjects()
         self.load_students()
 
     def setup_ui(self):
+        self.grid_rowconfigure(1, weight=1)
+
         # Header with controls
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, padx=0, pady=(0, 15), sticky="ew")
 
+        top_row = ctk.CTkFrame(header_frame, fg_color="transparent")
+        top_row.pack(fill="x", padx=20, pady=(15, 0))
+
         ctk.CTkLabel(
-            header_frame,
+            top_row,
             text=TextLabelManager.get_header_text('marks_entry'),
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=20, pady=15)
+        ).pack(side="left")
         
-        # Subject count display
         self.subject_count_label = ctk.CTkLabel(
-            header_frame,
+            top_row,
             text="(20 subjects)",
             font=ctk.CTkFont(family="Segoe UI", size=12),
             text_color=COLORS["text_secondary"]
         )
-        self.subject_count_label.pack(side="left", padx=(0, 10), pady=15)
+        self.subject_count_label.pack(side="left", padx=10)
 
-        # Controls
-        controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        controls_frame.pack(side="right", padx=20, pady=15)
+        # Filters frame on new row inside header
+        filters_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        filters_frame.pack(fill="x", padx=5, pady=(5, 15))
 
-        ctk.CTkLabel(
-            controls_frame,
-            text="Student:",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 8))
+        # Session
+        ctk.CTkLabel(filters_frame, text="Session:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(15, 3), pady=15)
+        self.session_var = ctk.StringVar()
+        self.session_filter = ctk.CTkComboBox(filters_frame, variable=self.session_var, width=120, command=self._cascade_students)
+        self.session_filter.pack(side="left", padx=(0, 5), pady=15)
+        
+        # Dept
+        ctk.CTkLabel(filters_frame, text="Dept:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.dept_var = ctk.StringVar()
+        self.dept_filter = ctk.CTkComboBox(filters_frame, variable=self.dept_var, width=120, command=self._cascade_students)
+        self.dept_filter.pack(side="left", padx=(0, 5), pady=15)
+        
+        # Class
+        ctk.CTkLabel(filters_frame, text="Class:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.class_var = ctk.StringVar()
+        self.class_filter = ctk.CTkComboBox(filters_frame, variable=self.class_var, values=["SSS1", "SSS2", "SSS3"], width=100, command=self._cascade_students)
+        self.class_filter.pack(side="left", padx=(0, 5), pady=15)
 
-        self.student_var = ctk.StringVar(value="")
-        self.student_combo = ctk.CTkOptionMenu(
-            controls_frame,
-            variable=self.student_var,
-            width=300,
-            height=40,
-            corner_radius=8,
-            fg_color=COLORS["sheet_row"],
-            text_color=COLORS["text_primary"],
-            button_color=COLORS["primary"],
-            button_hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            command=self.on_student_change
-        )
-        self.student_combo.pack(side="left", padx=8)
-
-        ctk.CTkLabel(
-            controls_frame,
-            text="Term:",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(20, 8))
-
-        self.term_var = ctk.StringVar(value="1")
-        self.term_combo = ctk.CTkOptionMenu(
-            controls_frame,
-            variable=self.term_var,
-            values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
-            width=150,
-            height=40,
-            corner_radius=8,
-            fg_color=COLORS["sheet_row"],
-            text_color=COLORS["text_primary"],
-            button_color=COLORS["primary"],
-            button_hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(family="Segoe UI", size=13),
+        # Term
+        ctk.CTkLabel(filters_frame, text="Term:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.term_var = ctk.StringVar(value="1 - First Term")
+        self.term_combo = ctk.CTkComboBox(
+            filters_frame, variable=self.term_var,
+            values=["1 - First Term", "2 - Second Term", "3 - Third Term"], width=140,
             command=self.on_term_change
         )
-        self.term_combo.pack(side="left", padx=8)
+        self.term_combo.pack(side="left", padx=(0, 5), pady=15)
+
+        # Student
+        ctk.CTkLabel(filters_frame, text="Student:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.student_var = ctk.StringVar()
+        self.student_combo = ctk.CTkComboBox(filters_frame, variable=self.student_var, width=180, command=self.on_student_change)
+        self.student_combo.pack(side="left", padx=(0, 5), pady=15)
 
         ctk.CTkButton(
-            controls_frame,
+            filters_frame,
             text=TextLabelManager.get_button_text('load') + " Marks",
             command=self.load_existing_marks,
-            width=110,
-            height=40,
-            corner_radius=8,
-            fg_color=COLORS["secondary"],
-            hover_color=COLORS["primary"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
-        ).pack(side="left", padx=(20, 0))
+            width=110, height=36, corner_radius=8,
+            fg_color=COLORS["secondary"], hover_color=COLORS["primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+        ).pack(side="left", padx=(15, 10), pady=15)
+
+        self._load_filter_data()
 
         # Marks Grid
         self.marks_frame = ctk.CTkScrollableFrame(
@@ -344,7 +336,7 @@ class MarksEntryTab(ctk.CTkFrame):
 
         # Footer - Save Button
         footer_frame = ctk.CTkFrame(self, fg_color="transparent")
-        footer_frame.grid(row=2, column=0, pady=15)
+        footer_frame.grid(row=3, column=0, pady=15)
 
         self.save_btn = ctk.CTkButton(
             footer_frame,
@@ -442,35 +434,68 @@ class MarksEntryTab(ctk.CTkFrame):
     def on_term_change(self, value):
         self.load_existing_marks()
 
-    def load_students(self):
-        students = self.session.query(Student).order_by(Student.full_name).all()
+    def _load_filter_data(self):
+        from models import AcademicSession, Department
+        sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+        session_names = ["All Sessions"] + [s.name for s in sessions]
+        self.session_filter.configure(values=session_names)
+        self.session_var.set("All Sessions")
+
+        depts = self.session.query(Department).all()
+        dept_names = ["All Departments"] + [d.name for d in depts]
+        self.dept_filter.configure(values=dept_names)
+        self.dept_var.set("All Departments")
+        
+        self.class_var.set("SSS1")
+        self.term_var.set("1 - First Term")
+        self._cascade_students()
+
+    def _cascade_students(self, *_):
+        from models import AcademicSession, Department
+        query = self.session.query(Student)
+        sess_name = self.session_var.get()
+        dept_name = self.dept_var.get()
+        cls_name = self.class_var.get()
+        
+        if sess_name != "All Sessions":
+            sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+            if sess: query = query.filter_by(session_id=sess.id)
+        if dept_name != "All Departments":
+            dept = self.session.query(Department).filter_by(name=dept_name).first()
+            if dept: query = query.filter_by(dept_id=dept.id)
+        if cls_name and cls_name != "All Classes":
+            query = query.filter_by(class_name=cls_name)
+            
+        students = query.order_by(Student.full_name).all()
         self.active_students = students
         if students:
             student_list = [f"{s.student_id} - {s.name}" for s in students]
             self.student_combo.configure(values=student_list)
-            current = self.student_var.get()
-            if current not in student_list:
-                self.student_var.set(student_list[0])
+            self.student_var.set(student_list[0])
         else:
             self.student_combo.configure(values=["No Students"])
             self.student_var.set("No Students")
+            
+        self.load_existing_marks()
+
+    def load_students(self):
+        # Trigger an initial load now that subjects are loaded
+        self.load_existing_marks()
 
     def load_subjects(self):
-        self.subjects = self.session.query(Subject).all()
-        self.entries = {}
-        
         # Update subject count display
         if hasattr(self, 'subject_count_label'):
             self.subject_count_label.configure(text=f"({len(self.subjects)} subjects)")
 
         for i, sub in enumerate(self.subjects, 1):
-            ctk.CTkLabel(
+            sub_label = ctk.CTkLabel(
                 self.marks_frame,
                 text=sub.subject_name,
                 anchor="w",
                 font=ctk.CTkFont(family="Segoe UI", size=13),
                 text_color=COLORS["text_primary"]
-            ).grid(row=i, column=0, sticky="ew", padx=15, pady=10)
+            )
+            sub_label.grid(row=i, column=0, sticky="ew", padx=15, pady=10)
 
             ca_var = tk.StringVar(value="")
             ca_cell = ctk.CTkFrame(self.marks_frame, fg_color="transparent")
@@ -604,6 +629,7 @@ class MarksEntryTab(ctk.CTkFrame):
             grade_lbl.grid(row=i, column=4, padx=10, pady=10)
 
             self.entries[sub.id] = {
+                'row_widgets': [sub_label, ca_cell, exam_cell, total_lbl, grade_lbl],
                 'ca': ca_var,
                 'exam': exam_var,
                 'ca_entry': ca_entry,
@@ -630,6 +656,9 @@ class MarksEntryTab(ctk.CTkFrame):
 
     def load_existing_marks(self):
         """Load existing marks for the selected student and term"""
+        if not self.entries:
+            return
+            
         student_str = self.student_var.get()
         if not student_str or student_str == "No Students":
             return
@@ -643,8 +672,24 @@ class MarksEntryTab(ctk.CTkFrame):
             term_value = self.term_var.get()
             term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
 
+            from models import DepartmentSubject
+            dept_subjects = self.session.query(DepartmentSubject).filter_by(dept_id=student.dept_id).all()
+            allowed_sub_names = [ds.subject_name for ds in dept_subjects]
+            allowed_sub_ids = [s.id for s in self.subjects if s.subject_name in allowed_sub_names]
+
+            visible_count = 0
             for sub in self.subjects:
                 widgets = self.entries[sub.id]
+                
+                if sub.id not in allowed_sub_ids:
+                    for w in widgets['row_widgets']:
+                        w.grid_remove()
+                    continue
+                else:
+                    visible_count += 1
+                    for w in widgets['row_widgets']:
+                        w.grid()
+
                 mark = self.session.query(Mark).filter_by(
                     student_id=student.id, subject_id=sub.id, term=term
                 ).first()
@@ -655,6 +700,9 @@ class MarksEntryTab(ctk.CTkFrame):
                 else:
                     widgets['ca'].set("")
                     widgets['exam'].set("")
+            
+            if hasattr(self, 'subject_count_label'):
+                self.subject_count_label.configure(text=f"({visible_count} subjects)")
 
         except Exception as e:
             print(f"Error loading marks: {e}")
@@ -749,7 +797,8 @@ class MarksEntryTab(ctk.CTkFrame):
                 saved_count += 1
 
             self.session.commit()
-            messagebox.showinfo("Saved", f"Success: {saved_count} marks saved for {student.name} (Term {term})")
+            from ui_components import show_info
+            show_info(self, "Saved", f"Success: {saved_count} marks saved for {student.name} (Term {term})")
 
         except Exception as e:
             self.session.rollback()
@@ -1210,37 +1259,24 @@ class AttendanceTab(ctk.CTkFrame):
             return date_key
 
     def setup_ui(self):
+        self.grid_rowconfigure(1, weight=1)
+        
+        # Header
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 15))
 
+        top_row = ctk.CTkFrame(header_frame, fg_color="transparent")
+        top_row.pack(fill="x", padx=20, pady=(15, 0))
+
         ctk.CTkLabel(
-            header_frame,
+            top_row,
             text=TextLabelManager.get_header_text('attendance'),
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(side="left", padx=20, pady=15)
-
-        controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        controls_frame.pack(side="right", padx=20, pady=15)
-
-        ctk.CTkLabel(
-            controls_frame,
-            text="Class",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 8))
-
-        self.class_var = ctk.StringVar()
-        self.class_combo = ctk.CTkComboBox(
-            controls_frame,
-            variable=self.class_var,
-            values=["SSS1", "SSS2", "SSS3"],
-            width=100,
-            height=40,
-            command=self.on_class_selected,
-            **input_style(),
-        )
-        self.class_combo.pack(side="left", padx=(0, 12))
+        ).pack(side="left")
+        
+        controls_frame = ctk.CTkFrame(top_row, fg_color="transparent")
+        controls_frame.pack(side="right")
 
         ctk.CTkLabel(
             controls_frame,
@@ -1249,24 +1285,15 @@ class AttendanceTab(ctk.CTkFrame):
             text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(0, 8))
 
-        self.date_picker = DatePickerField(
-            controls_frame,
-            width=120,
-            height=40,
-            font_size=13,
-        )
+        self.date_picker = DatePickerField(controls_frame, width=120, height=36, font_size=13)
         self.date_picker.pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
             controls_frame,
             text="Add Date Column",
             command=self.add_date_column,
-            width=130,
-            height=40,
-            corner_radius=MODAL_STYLE["radius"],
-            fg_color=COLORS["primary"],
-            hover_color=COLORS["primary_hover"],
-            text_color=COLORS["text_on_primary"],
+            width=130, height=36, corner_radius=8,
+            fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
         ).pack(side="left", padx=(0, 12))
 
@@ -1274,21 +1301,55 @@ class AttendanceTab(ctk.CTkFrame):
             controls_frame,
             text=TextLabelManager.get_button_text('save') + " All",
             command=self.save_attendance,
-            width=110,
-            height=40,
-            corner_radius=MODAL_STYLE["radius"],
-            fg_color=COLORS["secondary"],
-            hover_color=COLORS["primary"],
-            text_color=COLORS["text_on_primary"],
+            width=110, height=36, corner_radius=8,
+            fg_color=COLORS["secondary"], hover_color=COLORS["primary"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
             state="disabled",
         )
         self.save_btn.pack(side="left")
 
+        # Filters frame on new row inside header
+        filters_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        filters_frame.pack(fill="x", padx=5, pady=(5, 15))
+
+        # Session
+        ctk.CTkLabel(filters_frame, text="Session:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(15, 3), pady=15)
+        self.session_var = ctk.StringVar()
+        self.session_filter = ctk.CTkComboBox(filters_frame, variable=self.session_var, width=120, command=self._cascade_students)
+        self.session_filter.pack(side="left", padx=(0, 5), pady=15)
+        
+        # Dept
+        ctk.CTkLabel(filters_frame, text="Dept:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.dept_var = ctk.StringVar()
+        self.dept_filter = ctk.CTkComboBox(filters_frame, variable=self.dept_var, width=120, command=self._cascade_students)
+        self.dept_filter.pack(side="left", padx=(0, 5), pady=15)
+        
+        # Class
+        ctk.CTkLabel(filters_frame, text="Class:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.class_var = ctk.StringVar(value="SSS1")
+        self.class_combo = ctk.CTkComboBox(filters_frame, variable=self.class_var, values=["SSS1", "SSS2", "SSS3"], width=100, command=self._cascade_students)
+        self.class_combo.pack(side="left", padx=(0, 5), pady=15)
+
+        # Term
+        ctk.CTkLabel(filters_frame, text="Term:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.term_var = ctk.StringVar(value="1 - First Term")
+        self.term_combo = ctk.CTkComboBox(
+            filters_frame, variable=self.term_var,
+            values=["1 - First Term", "2 - Second Term", "3 - Third Term"], width=140,
+            command=self._cascade_students
+        )
+        self.term_combo.pack(side="left", padx=(0, 5), pady=15)
+
+        # Student
+        ctk.CTkLabel(filters_frame, text="Student:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3), pady=15)
+        self.student_var = ctk.StringVar()
+        self.student_combo = ctk.CTkComboBox(filters_frame, variable=self.student_var, width=180, command=self.on_class_selected)
+        self.student_combo.pack(side="left", padx=(0, 5), pady=15)
+        
         self.content_frame = ctk.CTkFrame(
             self,
             fg_color=COLORS["bg_card"],
-            corner_radius=MODAL_STYLE["radius"],
+            corner_radius=12,
             border_width=1,
             border_color=COLORS["border"],
         )
@@ -1297,6 +1358,7 @@ class AttendanceTab(ctk.CTkFrame):
         self.content_frame.grid_rowconfigure(0, weight=1)
 
         self.show_placeholder()
+        self._load_filter_data()
 
     def show_placeholder(self):
         for widget in self.content_frame.winfo_children():
@@ -1320,17 +1382,78 @@ class AttendanceTab(ctk.CTkFrame):
             wraplength=520,
         ).pack()
 
+    def _load_filter_data(self):
+        from models import AcademicSession, Department
+        sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+        session_names = ["All Sessions"] + [s.name for s in sessions]
+        self.session_filter.configure(values=session_names)
+        self.session_var.set("All Sessions")
+
+        depts = self.session.query(Department).all()
+        dept_names = ["All Departments"] + [d.name for d in depts]
+        self.dept_filter.configure(values=dept_names)
+        self.dept_var.set("All Departments")
+        
+        self.class_var.set("SSS1")
+        self.term_var.set("1 - First Term")
+        self._cascade_students()
+
+    def _cascade_students(self, *_):
+        from models import AcademicSession, Department, Student
+        query = self.session.query(Student)
+        sess_name = self.session_var.get()
+        dept_name = self.dept_var.get()
+        cls_name = self.class_var.get()
+        
+        if sess_name != "All Sessions":
+            sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+            if sess:
+                query = query.filter_by(session_id=sess.id)
+                
+        if dept_name != "All Departments":
+            dept = self.session.query(Department).filter_by(name=dept_name).first()
+            if dept:
+                query = query.filter_by(department_id=dept.id)
+                
+        if cls_name:
+            query = query.filter_by(class_name=cls_name)
+            
+        students = query.all()
+        student_names = ["All Students"] + [f"{s.id} - {s.surname} {s.firstname}" for s in students]
+        self.student_combo.configure(values=student_names)
+        if student_names:
+            self.student_var.set(student_names[0])
+            self.on_class_selected(cls_name)
+        else:
+            self.student_var.set("All Students")
+
     def on_class_selected(self, value):
-        self.current_class = value
+        self.current_class = self.class_var.get()
         self.load_sheet()
 
     def load_sheet(self):
         if not self.current_class:
             return
 
-        self.students = self.session.query(Student).filter_by(
-            class_name=self.current_class
-        ).order_by(Student.full_name).all()
+        query = self.session.query(Student).filter_by(class_name=self.current_class)
+        
+        if hasattr(self, 'session_var') and hasattr(self, 'dept_var'):
+            from models import AcademicSession, Department
+            sess_name = self.session_var.get()
+            dept_name = self.dept_var.get()
+            
+            if sess_name and sess_name != "All Sessions":
+                sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+                if sess: query = query.filter_by(session_id=sess.id)
+            if dept_name and dept_name != "All Departments":
+                dept = self.session.query(Department).filter_by(name=dept_name).first()
+                if dept: query = query.filter_by(dept_id=dept.id)
+
+        student_filter = self.student_var.get() if hasattr(self, 'student_var') else "All Students"
+        if student_filter and student_filter != "All Students":
+            query = query.filter(Student.full_name == student_filter)
+
+        self.students = query.order_by(Student.full_name).all()
 
         if not self.students:
             for widget in self.content_frame.winfo_children():

@@ -98,16 +98,69 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                 text=f"{self.student.full_name}  |  {self.student.student_id}  |  {self.student.class_name}"
             )
 
+        # Profile Picture Section
+        import os
+        from PIL import Image
+        from app_paths import find_asset
+        
+        # Banner Section
+        banner_path = find_asset(("assets/report-banner.png", "report-banner.png", "school_header.png"))
+        if banner_path and os.path.exists(banner_path):
+            try:
+                img = Image.open(banner_path)
+                w, h = img.size
+                new_w = 600
+                new_h = int(h * (new_w / w))
+                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                photo = ctk.CTkImage(light_image=img, dark_image=img, size=(new_w, new_h))
+                banner_label = ctk.CTkLabel(self.content_frame, image=photo, text="")
+                banner_label.pack(anchor="w", pady=(0, 20))
+            except Exception:
+                pass
+
+        
+        pic_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        pic_frame.pack(fill="x", pady=(10, 20))
+        
+        pic_path = self.student.profile_picture_path
+        if pic_path and os.path.exists(pic_path):
+            try:
+                from PIL import ImageOps
+                img = Image.open(pic_path)
+                img = ImageOps.fit(img, (160, 160), Image.Resampling.LANCZOS)
+                photo = ctk.CTkImage(light_image=img, dark_image=img, size=(160, 160))
+                pic_label = ctk.CTkLabel(pic_frame, image=photo, text="", width=160, height=160, corner_radius=10)
+                pic_label.pack(side="top", anchor="w")
+                
+                ctk.CTkButton(
+                    pic_frame,
+                    text="Replace Picture",
+                    command=self.replace_picture,
+                    width=120, height=28, corner_radius=6,
+                    fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"]
+                ).pack(side="top", anchor="w", pady=(10, 0))
+            except Exception:
+                pass
+
         # Display all student information
+        dept_name = self.student.department.name if self.student.department else "Not specified"
+        session_name = self.student.academic_session.name if self.student.academic_session else "Not specified"
+        
         self.create_info_section("Personal Information", [
             ("Student ID", self.student.student_id),
+            ("Surname", self.student.surname or ""),
+            ("First Name", self.student.firstname or ""),
             ("Full Name", self.student.full_name),
             ("Date of Birth", self.student.date_of_birth.strftime("%Y-%m-%d")),
             ("Age", f"{self.student.age} years"),
             ("Sex", self.student.sex),
+            ("Religion", self.student.religion or "Not specified"),
             ("Class", self.student.class_name),
+            ("Department", dept_name),
+            ("Session", session_name),
             ("Admission Year", str(self.student.admission_year)),
-            ("State of Origin", self.student.state_of_origin)
+            ("State of Origin", self.student.state_of_origin),
+            ("LGA of Origin", self.student.lga_of_origin or "")
         ])
         
         self.create_info_section("Contact Information", [
@@ -117,9 +170,41 @@ class StudentBioDataWindow(ctk.CTkToplevel):
         
         self.create_info_section("Guardian/Parent Information", [
             ("Guardian Name", self.student.guardian_name),
+            ("Guardian Occupation", getattr(self.student, "guardian_occupation", "Not provided")),
             ("Guardian Phone", self.student.guardian_phone),
             ("Guardian Address", self.student.guardian_address)
         ])
+        
+    def replace_picture(self):
+        from tkinter import filedialog
+        import os
+        import shutil
+        file_path = filedialog.askopenfilename(
+            title="Select New Profile Picture",
+            filetypes=[("Image files", "*.jpg *.jpeg *.png")]
+        )
+        if not file_path:
+            return
+            
+        try:
+            profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "profile_pictures")
+            os.makedirs(profile_dir, exist_ok=True)
+            ext = os.path.splitext(file_path)[1]
+            new_filename = f"{self.student.student_id.replace('/', '_')}{ext}"
+            new_path = os.path.join(profile_dir, new_filename)
+            
+            shutil.copy2(file_path, new_path)
+            
+            self.student.profile_picture_path = f"assets/profile_pictures/{new_filename}"
+            self.session.commit()
+            
+            from ui_components import show_info
+            show_info(self, "Success", "Profile picture updated successfully!")
+            
+            self.destroy()
+        except Exception as e:
+            from ui_components import show_error
+            show_error(self, "Error", f"Failed to update picture: {e}")
     
     def create_info_section(self, title, fields):
         """Create a section with labeled fields."""
@@ -188,7 +273,7 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                     fontSize=24,
                     textColor=colors.HexColor('#1a73e8'),
                     spaceAfter=30,
-                    alignment=TA_CENTER,
+                    alignment=TA_LEFT,
                     fontName='Helvetica-Bold'
                 )
                 
@@ -204,21 +289,46 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                 )
                 
                 # Header
+                from report_card_pdf import _header_block
+                story.extend(_header_block())
+                import os
+                from reportlab.platypus import Image as RLImage
+                pic_path = self.student.profile_picture_path
+                
                 story.append(Paragraph("STUDENT BIO DATA", title_style))
+                
+                if pic_path and os.path.exists(pic_path):
+                    try:
+                        img = RLImage(pic_path, width=1.5*inch, height=1.5*inch)
+                        img.hAlign = 'LEFT'
+                        story.append(Spacer(1, 0.1*inch))
+                        story.append(img)
+                    except Exception:
+                        pass
+                
                 story.append(Spacer(1, 0.3*inch))
                 
                 # Personal Information Section
                 story.append(Paragraph("Personal Information", section_style))
                 
+                dept_name = self.student.department.name if self.student.department else "Not specified"
+                session_name = self.student.academic_session.name if self.student.academic_session else "Not specified"
+                
                 personal_data = [
                     ["Student ID:", self.student.student_id],
+                    ["Surname:", self.student.surname or ""],
+                    ["First Name:", self.student.firstname or ""],
                     ["Full Name:", self.student.full_name],
                     ["Date of Birth:", self.student.date_of_birth.strftime("%Y-%m-%d")],
                     ["Age:", f"{self.student.age} years"],
                     ["Sex:", self.student.sex],
+                    ["Religion:", self.student.religion or "Not specified"],
                     ["Class:", self.student.class_name],
+                    ["Department:", dept_name],
+                    ["Session:", session_name],
                     ["Admission Year:", str(self.student.admission_year)],
-                    ["State of Origin:", self.student.state_of_origin]
+                    ["State of Origin:", self.student.state_of_origin],
+                    ["LGA of Origin:", self.student.lga_of_origin or ""]
                 ]
                 
                 personal_table = Table(personal_data, colWidths=[2*inch, 4*inch])
@@ -262,6 +372,7 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                 
                 guardian_data = [
                     ["Guardian Name:", self.student.guardian_name],
+                    ["Guardian Occupation:", getattr(self.student, "guardian_occupation", "Not provided") or "Not provided"],
                     ["Guardian Phone:", self.student.guardian_phone],
                     ["Guardian Address:", self.student.guardian_address]
                 ]

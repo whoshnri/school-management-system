@@ -8,6 +8,13 @@ from app_paths import app_dir
 Base = declarative_base()
 
 
+class Religion(Base):
+    __tablename__ = 'religions'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+
+
 class AcademicSession(Base):
     __tablename__ = 'academic_sessions'
 
@@ -69,10 +76,12 @@ class FeeStructure(Base):
     id          = Column(Integer, primary_key=True)
     class_name  = Column(String(10), nullable=False)
     term        = Column(Integer, nullable=False)
+    dept_name   = Column(String(50), nullable=True)  # Science | Art | Commercial
     amount_due  = Column(Float, default=0, nullable=False)
     updated_at  = Column(String(50), nullable=True)
+    fee_items   = Column(String, nullable=True)  # JSON string
 
-    __table_args__ = (UniqueConstraint('class_name', 'term', name='_class_term_fee_uc'),)
+    __table_args__ = (UniqueConstraint('class_name', 'term', 'dept_name', name='_class_term_dept_fee_uc'),)
 
 
 class Student(Base):
@@ -95,6 +104,7 @@ class Student(Base):
     guardian_name    = Column(String(200), nullable=False)
     guardian_phone   = Column(String(20), nullable=False)
     guardian_address = Column(String(500), nullable=False)
+    guardian_occupation = Column(String(100), nullable=True)
 
     # Academic Information
     class_name     = Column(String(10), nullable=False)
@@ -104,6 +114,13 @@ class Student(Base):
     # New FK columns (nullable for backward compat)
     dept_id    = Column(Integer, ForeignKey('departments.id'), nullable=True)
     session_id = Column(Integer, ForeignKey('academic_sessions.id'), nullable=True)
+
+    # V2 Enhancements
+    surname = Column(String(100), nullable=True)
+    firstname = Column(String(100), nullable=True)
+    religion = Column(String(100), nullable=True)
+    lga_of_origin = Column(String(100), nullable=True)
+    profile_picture_path = Column(String(500), nullable=True)
 
     # Relationships
     marks             = relationship("Mark", back_populates="student")
@@ -158,6 +175,7 @@ class ReportCard(Base):
     teacher_signature   = Column(String(200), nullable=True)
     principal_signature = Column(String(200), nullable=True)
     parent_signature    = Column(String(200), nullable=True)
+    next_term_resumption_date = Column(String(50), nullable=True)
     created_at          = Column(String(50), nullable=True)
     updated_at          = Column(String(50), nullable=True)
 
@@ -211,6 +229,7 @@ def run_migrations():
             "term INTEGER NOT NULL, "
             "amount_due FLOAT NOT NULL DEFAULT 0, "
             "updated_at VARCHAR(50), "
+            "fee_items VARCHAR, "
             "UNIQUE(class_name, term))"
         ))
         conn.execute(text(
@@ -231,4 +250,42 @@ def run_migrations():
             "updated_at VARCHAR(50), "
             "UNIQUE(student_id, term))"
         ))
+
+        # Add new columns to students
+        if 'guardian_occupation' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN guardian_occupation VARCHAR(100)")); conn.commit()
+            except Exception: pass
+        if 'surname' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN surname VARCHAR(100)")); conn.commit()
+            except Exception: pass
+        if 'firstname' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN firstname VARCHAR(100)")); conn.commit()
+            except Exception: pass
+        if 'religion' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN religion VARCHAR(100)")); conn.commit()
+            except Exception: pass
+        if 'lga_of_origin' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN lga_of_origin VARCHAR(100)")); conn.commit()
+            except Exception: pass
+        if 'profile_picture_path' not in existing_cols:
+            try: conn.execute(text("ALTER TABLE students ADD COLUMN profile_picture_path VARCHAR(500)")); conn.commit()
+            except Exception: pass
+
+        # Add new columns to fee_structures if table existed before
+        result_fees = conn.execute(text("PRAGMA table_info(fee_structures)"))
+        fee_cols = {row[1] for row in result_fees}
+        if 'fee_items' not in fee_cols:
+            try: conn.execute(text("ALTER TABLE fee_structures ADD COLUMN fee_items VARCHAR")); conn.commit()
+            except Exception: pass
+        if 'dept_name' not in fee_cols:
+            try: conn.execute(text("ALTER TABLE fee_structures ADD COLUMN dept_name VARCHAR(50)")); conn.commit()
+            except Exception: pass
+
+        # Create religions table
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS religions ("
+            "id INTEGER PRIMARY KEY, "
+            "name VARCHAR(100) NOT NULL UNIQUE)"
+        ))
+        
         conn.commit()

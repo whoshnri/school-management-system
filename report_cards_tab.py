@@ -163,6 +163,11 @@ class ReportCardEditWindow(ctk.CTkToplevel):
             PARENT_SIGNATURE_LABEL,
             self.report_card.parent_signature or "",
         )
+        self.next_term_resumption_date = self._entry_field(
+            scroll,
+            "Next Term Resumption Date",
+            self.report_card.next_term_resumption_date or "",
+        )
 
         create_modal_footer(
             self,
@@ -253,6 +258,7 @@ class ReportCardEditWindow(ctk.CTkToplevel):
             self.report_card.teacher_signature = self.teacher_signature.get().strip()
             self.report_card.principal_signature = self.principal_signature.get().strip()
             self.report_card.parent_signature = self.parent_signature.get().strip()
+            self.report_card.next_term_resumption_date = self.next_term_resumption_date.get().strip()
             self.report_card.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             self.session.commit()
@@ -284,34 +290,50 @@ class ReportCardsTab(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 15))
 
+        top_row = ctk.CTkFrame(header, fg_color="transparent")
+        top_row.pack(fill="x", padx=20, pady=(15, 0))
+
         ctk.CTkLabel(
-            header,
+            top_row,
             text="Report Cards",
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(side="left", padx=20, pady=15)
+        ).pack(side="left")
 
-        controls = ctk.CTkFrame(header, fg_color="transparent")
-        controls.pack(side="right", padx=20, pady=15)
+        # Filters frame on new row inside header
+        filters_frame = ctk.CTkFrame(header, fg_color="transparent")
+        filters_frame.pack(fill="x", padx=20, pady=(10, 15))
 
-        ctk.CTkLabel(
-            controls,
-            text="Student:",
-            font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 8))
+        # Session
+        ctk.CTkLabel(filters_frame, text="Session:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(0, 3))
+        self.session_var = ctk.StringVar()
+        self.session_filter = ctk.CTkComboBox(filters_frame, variable=self.session_var, width=120, command=self._cascade_students)
+        self.session_filter.pack(side="left", padx=(0, 5))
+        
+        # Dept
+        ctk.CTkLabel(filters_frame, text="Dept:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3))
+        self.dept_var = ctk.StringVar()
+        self.dept_filter = ctk.CTkComboBox(filters_frame, variable=self.dept_var, width=120, command=self._cascade_students)
+        self.dept_filter.pack(side="left", padx=(0, 5))
+        
+        # Class
+        ctk.CTkLabel(filters_frame, text="Class:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3))
+        self.class_var = ctk.StringVar(value="All Classes")
+        self.class_filter = ctk.CTkComboBox(filters_frame, variable=self.class_var, values=["All Classes", "SSS1", "SSS2", "SSS3"], width=100, command=self._cascade_students)
+        self.class_filter.pack(side="left", padx=(0, 5))
 
+        # Student
+        ctk.CTkLabel(filters_frame, text="Student:", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=COLORS["text_secondary"]).pack(side="left", padx=(5, 3))
         self.student_var = ctk.StringVar(value="")
         self.student_combo = ctk.CTkComboBox(
-            controls,
+            filters_frame,
             variable=self.student_var,
-            width=320,
-            height=40,
+            width=280,
             text_color=COLORS["text_primary"],
             command=self.on_student_selected,
             **input_style(),
         )
-        self.student_combo.pack(side="left")
+        self.student_combo.pack(side="left", padx=(0, 5))
 
         self.content = ctk.CTkScrollableFrame(
             self,
@@ -326,11 +348,43 @@ class ReportCardsTab(ctk.CTkFrame):
         enable_mousewheel_scrolling(self.content)
 
     def load_students(self):
-        self.students = self.session.query(Student).order_by(Student.full_name).all()
+        from models import AcademicSession, Department
+        sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+        session_names = ["All Sessions"] + [s.name for s in sessions]
+        self.session_filter.configure(values=session_names)
+        self.session_var.set("All Sessions")
+
+        depts = self.session.query(Department).all()
+        dept_names = ["All Departments"] + [d.name for d in depts]
+        self.dept_filter.configure(values=dept_names)
+        self.dept_var.set("All Departments")
+        
+        self.class_var.set("All Classes")
+        self._cascade_students()
+
+    def _cascade_students(self, *_):
+        from models import AcademicSession, Department
+        query = self.session.query(Student)
+        sess_name = self.session_var.get()
+        dept_name = self.dept_var.get()
+        cls_name = self.class_var.get()
+        
+        if sess_name != "All Sessions":
+            sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+            if sess: query = query.filter_by(session_id=sess.id)
+        if dept_name != "All Departments":
+            dept = self.session.query(Department).filter_by(name=dept_name).first()
+            if dept: query = query.filter_by(dept_id=dept.id)
+        if cls_name and cls_name != "All Classes":
+            query = query.filter_by(class_name=cls_name)
+            
+        self.students = query.order_by(Student.full_name).all()
         labels = [f"{student.full_name} ({student.student_id})" for student in self.students]
+        
         if not labels:
             self.student_combo.configure(values=["No students found"], state="disabled")
             self.student_var.set("No students found")
+            self.selected_student = None
             self.render_terms()
             return
 
@@ -348,6 +402,30 @@ class ReportCardsTab(ctk.CTkFrame):
                 self.selected_student = student
                 break
         self.render_terms()
+    def pick_student_photo(self):
+        if not self.selected_student: return
+        file_path = filedialog.askopenfilename(
+            title="Select Student Photo",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg")]
+        )
+        if file_path:
+            import shutil
+            import os
+            # Copy to an assets/photos folder
+            photos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "photos")
+            os.makedirs(photos_dir, exist_ok=True)
+            ext = os.path.splitext(file_path)[1]
+            dest_path = os.path.join(photos_dir, f"student_{self.selected_student.id}{ext}")
+            shutil.copy(file_path, dest_path)
+            
+            # Save relative path for better portability
+            rel_path = os.path.join("assets", "photos", f"student_{self.selected_student.id}{ext}")
+            self.selected_student.profile_picture_path = rel_path
+            self.session.commit()
+            
+            if hasattr(self, 'pic_status_label'):
+                self.pic_status_label.configure(text="✅ Photo uploaded")
+            show_info(self, "Success", "Student photo updated successfully.")
 
     def render_terms(self):
         for widget in self.content.winfo_children():
@@ -363,6 +441,23 @@ class ReportCardsTab(ctk.CTkFrame):
             return
 
         student = self.selected_student
+        
+        # Profile Picture Section
+        pic_frame = ctk.CTkFrame(self.content, fg_color="transparent")
+        pic_frame.pack(fill="x", padx=12, pady=(12, 12))
+        
+        ctk.CTkLabel(pic_frame, text="Student Photo:", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=COLORS["text_primary"]).pack(side="left", padx=(8, 15))
+        
+        pic_label_text = "✅ Photo uploaded" if getattr(student, 'profile_picture_path', None) else "❌ No photo"
+        self.pic_status_label = ctk.CTkLabel(pic_frame, text=pic_label_text, font=ctk.CTkFont(family="Segoe UI", size=13), text_color=COLORS["text_secondary"])
+        self.pic_status_label.pack(side="left", padx=(0, 15))
+        
+        ctk.CTkButton(
+            pic_frame, text="Upload Photo", command=self.pick_student_photo,
+            width=120, height=32, corner_radius=8, fg_color=COLORS["secondary"], hover_color=COLORS["primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold")
+        ).pack(side="left")
+
         list_frame = ctk.CTkFrame(self.content, fg_color="transparent")
         list_frame.pack(fill="x", padx=12, pady=(12, 8))
         for col, weight in enumerate((4, 1, 1, 2)):
