@@ -21,7 +21,7 @@ COLORS = {
 
 DEFAULT_ADMIN_USERNAME = "henrybassey2007@gmail.com"
 DEFAULT_ADMIN_PASSWORD = "as5XIUdc"
-SKIP_LOGIN = True
+SKIP_LOGIN = False
 
 DEPARTMENT_DEFAULTS = {
     "Science":    ["English Language", "Mathematics", "Physics", "Chemistry",
