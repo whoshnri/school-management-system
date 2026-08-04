@@ -190,6 +190,7 @@ class Admin(Base):
     id            = Column(Integer, primary_key=True)
     username      = Column(String(50), unique=True, nullable=False)
     password_hash = Column(String(256), nullable=False)
+    recovery_pin_hash = Column(String(256), nullable=True)
     created_at    = Column(String(50), nullable=False)
     is_active     = Column(Boolean, default=True)
 
@@ -287,5 +288,15 @@ def run_migrations():
             "id INTEGER PRIMARY KEY, "
             "name VARCHAR(100) NOT NULL UNIQUE)"
         ))
+
+        # Add recovery PIN hash to admins
+        result_admins = conn.execute(text("PRAGMA table_info(admins)"))
+        admin_cols = {row[1] for row in result_admins}
+        if 'recovery_pin_hash' not in admin_cols:
+            try:
+                conn.execute(text("ALTER TABLE admins ADD COLUMN recovery_pin_hash VARCHAR(256)"))
+                conn.commit()
+            except Exception:
+                pass
         
         conn.commit()

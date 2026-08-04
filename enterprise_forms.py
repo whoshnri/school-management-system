@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import messagebox, filedialog
 from models import Session, Student, Attendance, Mark, Fee
 from fee_receipt_pdf import generate_fee_receipt, is_fee_fully_paid
@@ -1201,12 +1202,26 @@ class AdminSettingsTab(ctk.CTkFrame):
         ).pack(anchor="w", padx=30, pady=(0, 20))
         
         # Current User (Read-only)
-        username = self.current_admin.username if self.current_admin else "Unknown"
-        self.create_field(update_frame, "Username:", username, readonly=True)
+        email = self.current_admin.username if self.current_admin else "Unknown"
+        self.create_field(update_frame, "Email:", email, readonly=True)
         
         self.update_current_pw = self.create_field(update_frame, "Current Password:", placeholder="Enter current password", is_password=True)
         self.update_new_pw = self.create_field(update_frame, "New Password:", placeholder="Enter new password", is_password=True)
         self.update_confirm_pw = self.create_field(update_frame, "Confirm Password:", placeholder="Confirm new password", is_password=True)
+
+        self.show_update_passwords = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            update_frame,
+            text="Show password fields",
+            variable=self.show_update_passwords,
+            command=lambda: self._toggle_entry_visibility(
+                [self.update_current_pw, self.update_new_pw, self.update_confirm_pw],
+                self.show_update_passwords.get(),
+            ),
+            text_color=COLORS["text_secondary"],
+            checkbox_width=18,
+            checkbox_height=18,
+        ).pack(anchor="w", padx=182, pady=(0, 10))
         
         btn_frame = ctk.CTkFrame(update_frame, fg_color="transparent")
         btn_frame.pack(fill="x", padx=30, pady=(10, 25))
@@ -1241,9 +1256,30 @@ class AdminSettingsTab(ctk.CTkFrame):
             text_color=COLORS["text_secondary"]
         ).pack(anchor="w", padx=30, pady=(0, 20))
         
-        self.reg_username = self.create_field(register_frame, "New Username:", placeholder="name@school.com")
+        self.reg_username = self.create_field(register_frame, "New Email:", placeholder="name@school.com")
         self.reg_password = self.create_field(register_frame, "Password:", placeholder="Enter password", is_password=True)
         self.reg_confirm = self.create_field(register_frame, "Confirm Password:", placeholder="Confirm password", is_password=True)
+        self.reg_recovery_pin = self.create_field(register_frame, "Recovery PIN:", placeholder="Enter 4+ digit PIN", is_password=True)
+        self.reg_confirm_pin = self.create_field(register_frame, "Confirm PIN:", placeholder="Re-enter recovery PIN", is_password=True)
+
+        self.show_register_passwords = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            register_frame,
+            text="Show password and PIN fields",
+            variable=self.show_register_passwords,
+            command=lambda: self._toggle_entry_visibility(
+                [
+                    self.reg_password,
+                    self.reg_confirm,
+                    self.reg_recovery_pin,
+                    self.reg_confirm_pin,
+                ],
+                self.show_register_passwords.get(),
+            ),
+            text_color=COLORS["text_secondary"],
+            checkbox_width=18,
+            checkbox_height=18,
+        ).pack(anchor="w", padx=182, pady=(0, 10))
         
         btn_frame = ctk.CTkFrame(register_frame, fg_color="transparent")
         btn_frame.pack(fill="x", padx=30, pady=(10, 25))
@@ -1295,7 +1331,7 @@ class AdminSettingsTab(ctk.CTkFrame):
         header_row = ctk.CTkFrame(self.admins_list_frame, fg_color="transparent")
         header_row.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(header_row, text="Username", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(header_row, text="Email", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
         ctk.CTkLabel(header_row, text="Created At", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=150, anchor="w").pack(side="left", padx=5)
         ctk.CTkLabel(header_row, text="Actions", font=ctk.CTkFont(size=13, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="center").pack(side="right", padx=5)
         
@@ -1375,6 +1411,12 @@ class AdminSettingsTab(ctk.CTkFrame):
         entry.pack(side="left", padx=10)
         return entry
 
+    def _toggle_entry_visibility(self, entries, reveal):
+        """Toggle one or more secret fields between hidden and visible text."""
+        secret_mask = "" if reveal else "●"
+        for entry in entries:
+            entry.configure(show=secret_mask)
+
     def handle_update_password(self):
         """Update current admin password."""
         import hashlib
@@ -1434,8 +1476,10 @@ class AdminSettingsTab(ctk.CTkFrame):
         username = self.reg_username.get().strip()
         password = self.reg_password.get()
         confirm = self.reg_confirm.get()
+        recovery_pin = self.reg_recovery_pin.get().strip()
+        confirm_pin = self.reg_confirm_pin.get().strip()
         
-        if not username or not password or not confirm:
+        if not username or not password or not confirm or not recovery_pin or not confirm_pin:
             messagebox.showerror("Error", "All fields are required.")
             return
 
@@ -1446,6 +1490,14 @@ class AdminSettingsTab(ctk.CTkFrame):
         
         if password != confirm:
             messagebox.showerror("Error", "Passwords do not match.")
+            return
+
+        if recovery_pin != confirm_pin:
+            messagebox.showerror("Error", "Recovery PIN values do not match.")
+            return
+
+        if not recovery_pin.isdigit() or len(recovery_pin) < 4:
+            messagebox.showerror("Error", "Recovery PIN must be at least 4 digits.")
             return
         
         if len(password) < 4:
@@ -1461,11 +1513,13 @@ class AdminSettingsTab(ctk.CTkFrame):
             
             # Create password hash
             password_hash = hashlib.sha256(password.encode()).hexdigest()
+            recovery_pin_hash = hashlib.sha256(recovery_pin.encode()).hexdigest()
             
             # Create new admin
             new_admin = Admin(
                 username=username,
                 password_hash=password_hash,
+                recovery_pin_hash=recovery_pin_hash,
                 created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 is_active=True
             )
@@ -1478,6 +1532,8 @@ class AdminSettingsTab(ctk.CTkFrame):
             self.reg_username.delete(0, 'end')
             self.reg_password.delete(0, 'end')
             self.reg_confirm.delete(0, 'end')
+            self.reg_recovery_pin.delete(0, 'end')
+            self.reg_confirm_pin.delete(0, 'end')
             
         except Exception as e:
             self.session.rollback()
