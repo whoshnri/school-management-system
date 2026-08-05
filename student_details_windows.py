@@ -149,7 +149,7 @@ class StudentBioDataWindow(ctk.CTkToplevel):
         self.create_info_section("Personal Information", [
             ("Student ID", self.student.student_id),
             ("Surname", self.student.surname or ""),
-            ("First Name", self.student.firstname or ""),
+            ("Other Names", getattr(self.student, 'other_names', None) or self.student.firstname or ""),
             ("Full Name", self.student.full_name),
             ("Date of Birth", self.student.date_of_birth.strftime("%Y-%m-%d")),
             ("Age", f"{self.student.age} years"),
@@ -317,7 +317,7 @@ class StudentBioDataWindow(ctk.CTkToplevel):
                 personal_data = [
                     ["Student ID:", self.student.student_id],
                     ["Surname:", self.student.surname or ""],
-                    ["First Name:", self.student.firstname or ""],
+                    ["Other Names:", getattr(self.student, 'other_names', None) or self.student.firstname or ""],
                     ["Full Name:", self.student.full_name],
                     ["Date of Birth:", self.student.date_of_birth.strftime("%Y-%m-%d")],
                     ["Age:", f"{self.student.age} years"],

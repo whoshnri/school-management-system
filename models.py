@@ -117,7 +117,8 @@ class Student(Base):
 
     # V2 Enhancements
     surname = Column(String(100), nullable=True)
-    firstname = Column(String(100), nullable=True)
+    other_names = Column(String(100), nullable=True)
+    firstname_col = Column("firstname", String(100), nullable=True)
     religion = Column(String(100), nullable=True)
     lga_of_origin = Column(String(100), nullable=True)
     profile_picture_path = Column(String(500), nullable=True)
@@ -129,6 +130,16 @@ class Student(Base):
     fees              = relationship("Fee", back_populates="student")
     department        = relationship("Department")
     academic_session  = relationship("AcademicSession")
+
+    @property
+    def firstname(self):
+        """Backward compatibility property mapping to other_names."""
+        return self.other_names or self.firstname_col
+
+    @firstname.setter
+    def firstname(self, value):
+        self.other_names = value
+        self.firstname_col = value
 
     @property
     def name(self):
@@ -201,7 +212,6 @@ engine = create_engine(f"sqlite:///{DB_FILE.as_posix()}")
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
-
 def run_migrations():
     """Safely add new columns to existing tables using PRAGMA table_info."""
     with engine.connect() as conn:
@@ -262,6 +272,12 @@ def run_migrations():
         if 'firstname' not in existing_cols:
             try: conn.execute(text("ALTER TABLE students ADD COLUMN firstname VARCHAR(100)")); conn.commit()
             except Exception: pass
+        if 'other_names' not in existing_cols:
+            try:
+                conn.execute(text("ALTER TABLE students ADD COLUMN other_names VARCHAR(100)"))
+                conn.execute(text("UPDATE students SET other_names = firstname WHERE other_names IS NULL AND firstname IS NOT NULL"))
+                conn.commit()
+            except Exception: pass
         if 'religion' not in existing_cols:
             try: conn.execute(text("ALTER TABLE students ADD COLUMN religion VARCHAR(100)")); conn.commit()
             except Exception: pass
@@ -300,3 +316,5 @@ def run_migrations():
                 pass
         
         conn.commit()
+
+run_migrations()

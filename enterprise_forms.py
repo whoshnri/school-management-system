@@ -509,6 +509,10 @@ class StudentsListTab(ctk.CTkFrame):
                 
                 # Update student
                 student.full_name = new_name
+                name_parts = new_name.split(maxsplit=1)
+                student.surname = name_parts[0] if name_parts else ""
+                student.other_names = name_parts[1] if len(name_parts) > 1 else ""
+                student.firstname = student.other_names
                 student.date_of_birth = new_dob
                 student.age = age
                 student.sex = new_sex

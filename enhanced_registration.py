@@ -186,7 +186,7 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         """Bind Shift+Tab for backwards navigation."""
         order = [
             self.surname_entry,
-            self.firstname_entry,
+            self.other_names_entry,
             self.id_number_entry,
             self.phone_entry,
             self.guardian_name_entry,
@@ -249,6 +249,29 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         self.session_combo.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
         row += 1
 
+        # Class
+        self._label(form_scroll, "Class *", row)
+        self.class_var = ctk.StringVar(value="SSS1")
+        ctk.CTkComboBox(form_scroll, variable=self.class_var,
+                        values=["SSS1", "SSS2", "SSS3"],
+                        width=380, height=45, corner_radius=10,
+                        border_width=1, border_color=COLORS["border"],
+                        font=ctk.CTkFont(size=14)
+                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
+        row += 1
+
+        # Department
+        self._label(form_scroll, "Department *", row)
+        self.dept_var = ctk.StringVar(value="Science")
+        ctk.CTkComboBox(form_scroll, variable=self.dept_var,
+                        values=["Science", "Art", "Commercial"],
+                        command=self._on_dept_change,
+                        width=380, height=45, corner_radius=10,
+                        border_width=1, border_color=COLORS["border"],
+                        font=ctk.CTkFont(size=14)
+                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
+        row += 1
+
         # Student ID
         self._label(form_scroll, "Student ID *", row)
         id_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
@@ -280,7 +303,7 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         # ---- Section: Personal Information ----
         self._section(form_scroll, "Personal Information", row); row += 1
 
-        # Name (Surname + First Name)
+        # Name (Surname + Other Names)
         self._label(form_scroll, "Student Name *", row)
         name_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
         name_frame.grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
@@ -293,16 +316,16 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         )
         self.surname_entry.pack(side="left", padx=(0, 10))
 
-        self.firstname_entry = ctk.CTkEntry(
-            name_frame, placeholder_text="First Name",
+        self.other_names_entry = ctk.CTkEntry(
+            name_frame, placeholder_text="Other Names",
             width=185, height=45, corner_radius=10,
             border_width=1, border_color=COLORS["border"],
             font=ctk.CTkFont(size=14)
         )
-        self.firstname_entry.pack(side="left")
+        self.other_names_entry.pack(side="left")
+        self.firstname_entry = self.other_names_entry
         row += 1
         self.name_error_label = self._error_label(form_scroll, row); row += 1
-
 
         # Profile Picture
         self._label(form_scroll, "Profile Picture", row)
@@ -347,6 +370,16 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         row += 1
         self.religion_error_label = self._error_label(form_scroll, row); row += 1
 
+        # Sex
+        self._label(form_scroll, "Sex *", row)
+        self.sex_var = ctk.StringVar(value="Male")
+        ctk.CTkComboBox(form_scroll, variable=self.sex_var, values=["Male", "Female"],
+                        width=380, height=45, corner_radius=10,
+                        border_width=1, border_color=COLORS["border"],
+                        font=ctk.CTkFont(size=14)
+                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
+        row += 1
+
         # Date of Birth
         self._label(form_scroll, "Date of Birth *", row)
         dob_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
@@ -369,39 +402,6 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
         self.update_age_display()
         row += 1
         self.dob_error_label = self._error_label(form_scroll, row); row += 1
-
-        # Sex
-        self._label(form_scroll, "Sex *", row)
-        self.sex_var = ctk.StringVar(value="Male")
-        ctk.CTkComboBox(form_scroll, variable=self.sex_var, values=["Male", "Female"],
-                        width=380, height=45, corner_radius=10,
-                        border_width=1, border_color=COLORS["border"],
-                        font=ctk.CTkFont(size=14)
-                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-        row += 1
-
-        # Class
-        self._label(form_scroll, "Class *", row)
-        self.class_var = ctk.StringVar(value="SSS1")
-        ctk.CTkComboBox(form_scroll, variable=self.class_var,
-                        values=["SSS1", "SSS2", "SSS3"],
-                        width=380, height=45, corner_radius=10,
-                        border_width=1, border_color=COLORS["border"],
-                        font=ctk.CTkFont(size=14)
-                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-        row += 1
-
-        # Department
-        self._label(form_scroll, "Department *", row)
-        self.dept_var = ctk.StringVar(value="Science")
-        ctk.CTkComboBox(form_scroll, variable=self.dept_var,
-                        values=["Science", "Art", "Commercial"],
-                        command=self._on_dept_change,
-                        width=380, height=45, corner_radius=10,
-                        border_width=1, border_color=COLORS["border"],
-                        font=ctk.CTkFont(size=14)
-                        ).grid(row=row, column=1, padx=25, pady=(10, 5), sticky="w")
-        row += 1
 
         # State of Origin
         self._label(form_scroll, "State of Origin *", row)
@@ -603,7 +603,8 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
 
         id_number = self.id_number_entry.get().strip()
         surname = self.surname_entry.get().strip()
-        firstname = self.firstname_entry.get().strip()
+        other_names = self.other_names_entry.get().strip()
+        firstname = other_names
         religion = self.religion_var.get().strip()
         dob = self.dob_picker.get_date()
         sex = self.sex_var.get()
@@ -631,8 +632,8 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
 
         student_id = f"{prefix_text}{id_number}"
 
-        if not surname or not firstname:
-            self.show_field_error("name", "Surname and First name are required")
+        if not surname or not other_names:
+            self.show_field_error("name", "Surname and Other names are required")
             self.surname_entry.focus()
             return
         if not religion:
@@ -676,9 +677,10 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
 
             new_student = Student(
                 student_id=student_id,
-                full_name=f"{surname} {firstname}",
+                full_name=f"{surname} {other_names}",
                 surname=surname,
-                firstname=firstname,
+                other_names=other_names,
+                firstname=other_names,
                 religion=religion,
                 date_of_birth=dob,
                 age=age,
@@ -712,12 +714,12 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
             self.session.add(new_student)
             self.session.commit()
 
-            self.show_success(f"Student '{surname} {firstname}' registered with ID: {student_id}")
+            self.show_success(f"Student '{surname} {other_names}' registered with ID: {student_id}")
 
             # Clear fields
             self.id_number_entry.delete(0, "end")
             self.surname_entry.delete(0, "end")
-            self.firstname_entry.delete(0, "end")
+            self.other_names_entry.delete(0, "end")
             self.home_address_entry.delete(0, "end")
             self._phone_vars["phone"].set("")
             self.guardian_name_entry.delete(0, "end")

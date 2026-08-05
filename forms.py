@@ -1419,7 +1419,7 @@ class AttendanceTab(ctk.CTkFrame):
             query = query.filter_by(class_name=cls_name)
             
         students = query.all()
-        student_names = ["All Students"] + [f"{s.id} - {s.surname} {s.firstname}" for s in students]
+        student_names = ["All Students"] + [f"{s.id} - {s.surname} {getattr(s, 'other_names', None) or s.firstname or ''}" for s in students]
         self.student_combo.configure(values=student_names)
         if student_names:
             self.student_var.set(student_names[0])

@@ -116,8 +116,9 @@ def create_seed_data():
                         student = Student(
                             student_id=student_id,
                             surname=sname,
+                            other_names=fname,
                             firstname=fname,
-                            full_name=f"{fname} {sname}",
+                            full_name=f"{sname} {fname}",
                             date_of_birth=date(2008 - classes.index(c), random.randint(1, 12), random.randint(1, 28)),
                             age=2024 - (2008 - classes.index(c)),
                             sex=random.choice(["Male", "Female"]),
