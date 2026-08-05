@@ -47,16 +47,20 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 15))
 
+        # Top title row
+        top_row = ctk.CTkFrame(header_frame, fg_color="transparent")
+        top_row.pack(fill="x", padx=20, pady=(15, 0))
+
         ctk.CTkLabel(
-            header_frame,
+            top_row,
             text="Enhanced Broadsheet & Report Cards",
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(side="left", padx=20, pady=15)
+        ).pack(side="left")
 
-        # Controls
+        # Controls on a new dedicated row below the title
         controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        controls_frame.pack(side="right", padx=20, pady=15)
+        controls_frame.pack(fill="x", padx=15, pady=(5, 15))
 
         # Class selection
         ctk.CTkLabel(
@@ -64,20 +68,41 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             text="Class:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
             text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(5, 5))
 
         class_values = [f"{cls} ({self.get_class_population(cls)})" for cls in ["SSS1", "SSS2", "SSS3"]]
         self.class_filter = ctk.CTkComboBox(
             controls_frame,
             values=class_values,
             width=130,
-            height=40,
+            height=38,
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
-        self.class_filter.pack(side="left", padx=5)
+        self.class_filter.pack(side="left", padx=(0, 10))
+
+        # Department selection
+        ctk.CTkLabel(
+            controls_frame,
+            text="Dept:",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(5, 5))
+
+        self.dept_filter = ctk.CTkComboBox(
+            controls_frame,
+            values=["All Departments", "Science", "Art", "Commercial"],
+            width=140,
+            height=38,
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
+            font=ctk.CTkFont(family="Segoe UI", size=13)
+        )
+        self.dept_filter.set("All Departments")
+        self.dept_filter.pack(side="left", padx=(0, 10))
 
         # Term selection
         ctk.CTkLabel(
@@ -85,19 +110,19 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             text="Term:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
             text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(20, 8))
+        ).pack(side="left", padx=(5, 5))
 
         self.term_filter = ctk.CTkComboBox(
             controls_frame,
             values=["1 - First Term", "2 - Second Term", "3 - Third Term"],
-            width=150,
-            height=40,
+            width=145,
+            height=38,
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
-        self.term_filter.pack(side="left", padx=5)
+        self.term_filter.pack(side="left", padx=(0, 10))
 
         # Academic Year
         ctk.CTkLabel(
@@ -105,35 +130,35 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             text="Year:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
             text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(20, 8))
+        ).pack(side="left", padx=(5, 5))
 
         current_year = datetime.now().year
         years = [str(year) for year in range(current_year - 5, current_year + 2)]
         self.year_filter = ctk.CTkComboBox(
             controls_frame,
             values=years,
-            width=80,
-            height=40,
+            width=85,
+            height=38,
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
         self.year_filter.set(str(current_year))
-        self.year_filter.pack(side="left", padx=5)
+        self.year_filter.pack(side="left", padx=(0, 15))
 
         # Load button
         ctk.CTkButton(
             controls_frame,
             text="Load Report",
             command=self.load_enhanced_sheet,
-            width=100,
-            height=40,
+            width=110,
+            height=38,
             corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
-        ).pack(side="left", padx=(20, 8))
+        ).pack(side="left", padx=(0, 10))
 
         # Export button
         self.export_btn = ctk.CTkButton(
@@ -142,13 +167,13 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             command=self.export_enhanced_csv,
             state="disabled",
             width=100,
-            height=40,
+            height=38,
             corner_radius=8,
             fg_color=COLORS["success"],
             hover_color="#2d8f47",
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
-        self.export_btn.pack(side="left", padx=5)
+        self.export_btn.pack(side="left", padx=0)
 
         # Broadsheet Display Area
         self.sheet_frame = ctk.CTkScrollableFrame(
@@ -174,6 +199,7 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
         # Get selections
         class_name_full = self.class_filter.get()
         self.current_class = class_name_full.split(' ')[0] if class_name_full else ""
+        dept_choice = self.dept_filter.get()
         term_value = self.term_filter.get()
         self.current_term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
         current_year = int(self.year_filter.get())
@@ -182,9 +208,26 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             messagebox.showwarning("Selection Error", "Please select a class.")
             return
 
-        # Load students and subjects
-        self.students = self.session.query(Student).filter_by(class_name=self.current_class).order_by(Student.full_name).all()
-        self.subjects = self.session.query(Subject).all()
+        # Load students and subjects with department filter
+        from models import Department, get_department_subjects_for_class
+        query = self.session.query(Student).filter_by(class_name=self.current_class)
+        if dept_choice and dept_choice != "All Departments":
+            dept_obj = self.session.query(Department).filter_by(name=dept_choice).first()
+            if dept_obj:
+                query = query.filter_by(dept_id=dept_obj.id)
+        self.students = query.order_by(Student.full_name).all()
+
+        if dept_choice and dept_choice != "All Departments":
+            dept_obj = self.session.query(Department).filter_by(name=dept_choice).first()
+            if dept_obj:
+                dept_subs = get_department_subjects_for_class(self.session, dept_obj.id, self.current_class)
+                dept_sub_names = [ds.subject_name for ds in dept_subs]
+                self.subjects = self.session.query(Subject).filter(Subject.subject_name.in_(dept_sub_names)).all()
+            else:
+                self.subjects = self.session.query(Subject).all()
+        else:
+            self.subjects = self.session.query(Subject).all()
+
 
         if not self.students:
             self.show_empty_state()

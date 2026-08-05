@@ -159,6 +159,7 @@ class SessionsTab(ctk.CTkFrame):
             self.db.commit()
             self.error_label.configure(text="")
             self.load_sessions()
+            self.notify_sessions_changed()
         except IntegrityError:
             self.db.rollback()
             self.error_label.configure(text=f"Session '{name}' already exists.")
@@ -170,6 +171,7 @@ class SessionsTab(ctk.CTkFrame):
             sess.is_active = True
         self.db.commit()
         self.load_sessions()
+        self.notify_sessions_changed()
 
     def _delete(self, session_id: int, name: str):
         if not messagebox.askyesno("Delete Session",
@@ -179,7 +181,20 @@ class SessionsTab(ctk.CTkFrame):
         if sess:
             self.db.delete(sess)
             self.db.commit()
+            self.notify_sessions_changed()
         self.load_sessions()
+
+    def add_on_sessions_changed_callback(self, cb):
+        if not hasattr(self, "_callbacks"):
+            self._callbacks = []
+        self._callbacks.append(cb)
+
+    def notify_sessions_changed(self):
+        for cb in getattr(self, "_callbacks", []):
+            try:
+                cb()
+            except Exception:
+                pass
 
     def get_active_session(self):
         """Return the currently active AcademicSession or None."""
@@ -187,3 +202,4 @@ class SessionsTab(ctk.CTkFrame):
 
     def get_all_sessions(self):
         return self.db.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+

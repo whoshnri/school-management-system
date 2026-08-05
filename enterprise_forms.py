@@ -406,7 +406,22 @@ class StudentsListTab(ctk.CTkFrame):
         )
         form_scroll.pack(fill="both", expand=True, padx=MODAL_STYLE["padding"], pady=MODAL_STYLE["padding"])
 
-        create_form_entry(form_scroll, "Student ID", student.student_id, readonly=True)
+        current_dept = student.department.name if student.department else "Science"
+        dept_var = ctk.StringVar(value=current_dept)
+
+        id_entry = create_form_entry(form_scroll, "Student ID", student.student_id)
+
+        def _on_edit_dept_change(choice):
+            dept_code_map = {"Science": "SC", "Art": "AR", "Commercial": "CO"}
+            new_code = dept_code_map.get(choice, "SC")
+            curr_id = id_entry.get()
+            for old_code in ["SC", "AR", "CO"]:
+                if f"/{old_code}/" in curr_id:
+                    new_id = curr_id.replace(f"/{old_code}/", f"/{new_code}/")
+                    id_entry.delete(0, "end")
+                    id_entry.insert(0, new_id)
+                    break
+
         create_section_header(form_scroll, "Personal Information")
         full_name_entry = create_form_entry(form_scroll, "Full Name *", student.full_name)
 
@@ -424,6 +439,8 @@ class StudentsListTab(ctk.CTkFrame):
 
         sex_var = ctk.StringVar(value=student.sex)
         create_form_combobox(form_scroll, "Sex *", ["Male", "Female"], sex_var)
+
+        create_form_combobox(form_scroll, "Department *", ["Science", "Art", "Commercial"], dept_var, command=_on_edit_dept_change)
 
         class_var = ctk.StringVar(value=student.class_name)
         create_form_combobox(form_scroll, "Class *", ["SSS1", "SSS2", "SSS3"], class_var)
@@ -460,9 +477,11 @@ class StudentsListTab(ctk.CTkFrame):
         def save_all_changes():
             """Save all edited student information."""
             # Get all values
+            new_id = id_entry.get().strip()
             new_name = full_name_entry.get().strip()
             new_dob = dob_picker.get_date()
             new_sex = sex_var.get()
+            new_dept = dept_var.get()
             new_class = class_var.get()
             new_admission_year = admission_year_entry.get().strip()
             new_state = state_picker.get()
@@ -473,6 +492,10 @@ class StudentsListTab(ctk.CTkFrame):
             new_guardian_address = guardian_address_text.get("1.0", "end-1c").strip()
             
             # Validation
+            if not new_id:
+                show_error(edit_modal, "Error", "Student ID is required")
+                return
+
             if not new_name or len(new_name.split()) < 2:
                 show_error(edit_modal, "Error", "Please enter a valid full name (at least 2 names)")
                 return
@@ -508,6 +531,7 @@ class StudentsListTab(ctk.CTkFrame):
                 age = today.year - new_dob.year - ((today.month, today.day) < (new_dob.month, new_dob.day))
                 
                 # Update student
+                student.student_id = new_id
                 student.full_name = new_name
                 name_parts = new_name.split(maxsplit=1)
                 student.surname = name_parts[0] if name_parts else ""
@@ -525,7 +549,12 @@ class StudentsListTab(ctk.CTkFrame):
                 student.guardian_phone = new_guardian_phone
                 student.guardian_address = new_guardian_address
                 
+                dept_obj = self.session.query(Department).filter_by(name=new_dept).first()
+                if dept_obj:
+                    student.dept_id = dept_obj.id
+
                 self.session.commit()
+
 
                 def after_save():
                     self.load_students()
@@ -1756,7 +1785,8 @@ class EnterpriseSchoolManagementApp:
             )
 
     def setup_main_frames(self):
-        from forms import MarksEntryTab, BroadsheetTab, AttendanceTab
+        from forms import MarksEntryTab, AttendanceTab
+        from enhanced_broadsheet import EnhancedBroadsheetTab
         from enhanced_registration import EnhancedStudentRegistrationTab
         from sessions_tab import SessionsTab
         from departments_tab import DepartmentsTab
@@ -1767,12 +1797,30 @@ class EnterpriseSchoolManagementApp:
         self.school_fees_frame = SchoolFeesTab(self.root, self.session)
         self.registration_frame = EnhancedStudentRegistrationTab(self.root, self.session, on_student_added_callback=self.refresh_data)
         self.marks_frame = MarksEntryTab(self.root, self.session)
-        self.broadsheet_frame = BroadsheetTab(self.root, self.session)
+        self.broadsheet_frame = EnhancedBroadsheetTab(self.root, self.session)
         self.attendance_frame = AttendanceTab(self.root, self.session)
         self.report_cards_frame = ReportCardsTab(self.root, self.session)
         self.admin_settings_frame = AdminSettingsTab(self.root, self.session, self.current_admin)
         self.sessions_frame = SessionsTab(self.root)
         self.departments_frame = DepartmentsTab(self.root)
+
+        # Wire dynamic session & subject update callbacks
+        def _on_sessions_updated():
+            if hasattr(self.registration_frame, 'refresh_sessions'):
+                self.registration_frame.refresh_sessions()
+            if hasattr(self.students_list_frame, 'load_students'):
+                self.students_list_frame.load_students()
+
+        self.sessions_frame.add_on_sessions_changed_callback(_on_sessions_updated)
+
+        def _on_subjects_updated():
+            if hasattr(self.marks_frame, 'load_subjects'):
+                self.marks_frame.load_subjects()
+            if hasattr(self.broadsheet_frame, 'load_enhanced_sheet'):
+                self.broadsheet_frame.load_enhanced_sheet()
+
+        self.departments_frame.add_on_subject_changed_callback(_on_subjects_updated)
+
 
     def select_frame_by_name(self, name):
         for btn_name, btn in self.nav_buttons.items():

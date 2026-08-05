@@ -150,9 +150,25 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
     def _on_dept_change(self, _value=None):
         self._refresh_id_preview()
 
-    def _on_session_change(self, session_name: str):
+    def _on_session_change(self, session_name: str = ""):
         """Update ID prefix when session selection changes."""
         self._refresh_id_preview()
+
+    def refresh_sessions(self):
+        """Reload sessions dropdown dynamically from database."""
+        try:
+            sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+            session_names = [s.name for s in sessions] or ["No sessions — add one in Sessions tab"]
+            active = self.session.query(AcademicSession).filter_by(is_active=True).first()
+            if hasattr(self, "session_combo"):
+                self.session_combo.configure(values=session_names)
+                if active:
+                    self.session_var.set(active.name)
+                elif session_names and session_names[0] != "No sessions — add one in Sessions tab":
+                    self.session_var.set(session_names[0])
+                self._refresh_id_preview()
+        except Exception:
+            pass
 
     def _refresh_id_preview(self):
         """Auto-fill the ID number field with next available number."""
@@ -163,14 +179,17 @@ class EnhancedStudentRegistrationTab(ctk.CTkFrame):
             yy = session_name[2:4] if len(session_name) >= 4 else "00"
             dept_code = self._get_dept_code()
             prefix = f"GFA/{yy}/S/{dept_code}/"
-            self.id_prefix_label.configure(text=prefix)
+            if hasattr(self, "id_prefix_label"):
+                self.id_prefix_label.configure(text=prefix)
             
             next_num = next_admission_number(self.session, yy, dept_code)
-            self.id_number_entry.configure(state="normal")
-            self.id_number_entry.delete(0, "end")
-            self.id_number_entry.insert(0, next_num)
+            if hasattr(self, "id_number_entry"):
+                self.id_number_entry.configure(state="normal")
+                self.id_number_entry.delete(0, "end")
+                self.id_number_entry.insert(0, next_num)
         except Exception:
             pass
+
 
     def _validate_phone(self, field: str, *_):
         value = self._phone_vars[field].get()

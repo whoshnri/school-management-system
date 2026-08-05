@@ -246,37 +246,53 @@ def _info_table(student, term):
 
 
 def _fetch_marks(db, student_id, term):
-    rows = db.query(Mark, Subject).join(Subject).filter(
-        Mark.student_id == student_id,
-        Mark.term == term,
-    ).all()
-    
     student = db.query(Student).filter_by(id=student_id).first()
+    if not student:
+        return []
+
     class_name = student.class_name
-    
+    from models import get_department_subjects_for_class, Subject
+    dept_subjects = get_department_subjects_for_class(db, student.dept_id, student.class_name) if student.dept_id else []
+    expected_names = [ds.subject_name for ds in dept_subjects]
+
+    if expected_names:
+        subjects = db.query(Subject).filter(Subject.subject_name.in_(expected_names)).all()
+    else:
+        subjects = db.query(Subject).all()
+
     result = []
-    for mark, subject in rows:
-        grade = mark.grade or GradeCalculator.calculate_grade(mark.total)
-        remark = GradeCalculator.get_remark(mark.total)
-        
+    for subject in subjects:
+        mark = db.query(Mark).filter_by(
+            student_id=student_id,
+            subject_id=subject.id,
+            term=term
+        ).first()
+
+        ca = mark.continuous_assessment if mark else 0.0
+        exam = mark.exams if mark else 0.0
+        total = mark.total if mark else 0.0
+        grade = (mark.grade if mark else None) or GradeCalculator.calculate_grade(total)
+        remark = GradeCalculator.get_remark(total)
+
         class_marks = db.query(Mark).join(Student).filter(
             Student.class_name == class_name,
-            Mark.subject_id == mark.subject_id,
+            Mark.subject_id == subject.id,
             Mark.term == term
         ).all()
         class_marks.sort(key=lambda m: m.total, reverse=True)
-        pos = next((i + 1 for i, m in enumerate(class_marks) if m.student_id == student_id), None)
-        
+        pos = next((i + 1 for i, m in enumerate(class_marks) if m.student_id == student_id), None) if mark else None
+
         result.append((
             subject.subject_name,
-            mark.continuous_assessment,
-            mark.exams,
-            mark.total,
+            ca,
+            exam,
+            total,
             grade,
             remark,
             pos,
         ))
     return result
+
 
 
 def _grades_table(marks_current, prev_marks=None, prev_label="Previous Total"):
@@ -625,7 +641,7 @@ def generate_report_card(student_id, term, output_path):
         
         if getattr(report_card, 'next_term_resumption_date', None):
             resumption_style = ParagraphStyle(
-                'Resumption', parent=styles['Normal'],
+                'Resumption', parent=body_style,
                 fontSize=10, fontName='Helvetica-Bold', alignment=2, spaceBefore=20, textColor=DARK
             )
             story.append(Paragraph(f"Next Term Resumption Date: {report_card.next_term_resumption_date}", resumption_style))

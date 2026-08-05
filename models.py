@@ -38,9 +38,28 @@ class DepartmentSubject(Base):
     id           = Column(Integer, primary_key=True)
     dept_id      = Column(Integer, ForeignKey('departments.id'), nullable=False)
     subject_name = Column(String(100), nullable=False)
+    target_classes = Column(String(100), default="SSS1,SSS2,SSS3", nullable=True)
     department   = relationship("Department", back_populates="subjects")
 
     __table_args__ = (UniqueConstraint('dept_id', 'subject_name', name='_dept_subject_uc'),)
+
+
+def get_department_subjects_for_class(db_session, dept_id: int, class_name: str = None):
+    """Return list of DepartmentSubject records matching dept_id and optional class_name."""
+    if not dept_id:
+        return []
+    dept_subjects = db_session.query(DepartmentSubject).filter_by(dept_id=dept_id).all()
+    if not class_name or class_name in ("All Classes", "All"):
+        return dept_subjects
+    
+    matching = []
+    for ds in dept_subjects:
+        classes_str = ds.target_classes or "SSS1,SSS2,SSS3"
+        allowed = [c.strip() for c in classes_str.split(",") if c.strip()]
+        if class_name in allowed:
+            matching.append(ds)
+    return matching
+
 
 
 class Attendance(Base):
@@ -305,12 +324,13 @@ def run_migrations():
             "name VARCHAR(100) NOT NULL UNIQUE)"
         ))
 
-        # Add recovery PIN hash to admins
-        result_admins = conn.execute(text("PRAGMA table_info(admins)"))
-        admin_cols = {row[1] for row in result_admins}
-        if 'recovery_pin_hash' not in admin_cols:
+        # Add target_classes column to department_subjects
+        result_dept_subs = conn.execute(text("PRAGMA table_info(department_subjects)"))
+        dept_sub_cols = {row[1] for row in result_dept_subs}
+        if 'target_classes' not in dept_sub_cols:
             try:
-                conn.execute(text("ALTER TABLE admins ADD COLUMN recovery_pin_hash VARCHAR(256)"))
+                conn.execute(text("ALTER TABLE department_subjects ADD COLUMN target_classes VARCHAR(100) DEFAULT 'SSS1,SSS2,SSS3'"))
+                conn.execute(text("UPDATE department_subjects SET target_classes = 'SSS1,SSS2,SSS3' WHERE target_classes IS NULL"))
                 conn.commit()
             except Exception:
                 pass

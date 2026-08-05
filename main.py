@@ -117,53 +117,72 @@ class LoginWindow:
             from PIL import Image
             icon_path = find_asset(("assets/school-logo.jpeg", "school-logo.jpeg", "app_icon.png", "icon.jpg.jpeg", "icon.jpg"))
             if icon_path:
-                img = Image.open(icon_path).resize((80, 80), Image.Resampling.LANCZOS)
-                icon_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(80, 80))
+                img = Image.open(icon_path).resize((70, 70), Image.Resampling.LANCZOS)
+                icon_photo = ctk.CTkImage(light_image=img, dark_image=img, size=(70, 70))
                 ctk.CTkLabel(logo_frame, image=icon_photo, text="").pack()
         except Exception:
             pass
 
         ctk.CTkLabel(
             logo_frame, text="Admin Panel",
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=COLORS["primary"]
-        ).pack(pady=(10, 0))
+        ).pack(pady=(8, 0))
 
-        ctk.CTkLabel(
+        self.subtitle_label = ctk.CTkLabel(
             logo_frame, text="Admin Login",
-            font=ctk.CTkFont(family="Segoe UI", size=14),
+            font=ctk.CTkFont(family="Segoe UI", size=13),
             text_color=COLORS["text_secondary"]
-        ).pack(pady=(4, 0))
+        )
+        self.subtitle_label.pack(pady=(2, 0))
 
-        # Login form card
-        form_frame = ctk.CTkFrame(main_frame, fg_color=COLORS["bg_card"], corner_radius=12)
-        form_frame.pack(padx=40, pady=20, fill="x")
+        # Card container with sleek thinner borders
+        self.form_card = ctk.CTkFrame(
+            main_frame, fg_color=COLORS["bg_card"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"]
+        )
+        self.form_card.pack(padx=35, pady=15, fill="x")
 
-        ctk.CTkLabel(form_frame, text="Email",
+        self.loader_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.loader_index = 0
+
+        self._render_login_step()
+
+    def _clear_form_card(self):
+        for widget in self.form_card.winfo_children():
+            widget.destroy()
+
+    def _render_login_step(self):
+        self._clear_form_card()
+        self.subtitle_label.configure(text="Admin Login")
+
+        ctk.CTkLabel(self.form_card, text="Email",
                      font=ctk.CTkFont(size=13),
-                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(20, 5))
+                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(18, 4))
 
         self.email_entry = ctk.CTkEntry(
-            form_frame, placeholder_text="name@school.com",
-            width=320, height=45, corner_radius=8,
+            self.form_card, placeholder_text="name@school.com",
+            width=320, height=42, corner_radius=8,
+            border_width=1, border_color=COLORS["border"],
             font=ctk.CTkFont(size=14)
         )
-        self.email_entry.pack(padx=20, pady=(0, 15))
+        self.email_entry.pack(padx=20, pady=(0, 12))
 
-        ctk.CTkLabel(form_frame, text="Password",
+        ctk.CTkLabel(self.form_card, text="Password",
                      font=ctk.CTkFont(size=13),
-                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(0, 5))
+                     text_color=COLORS["text_secondary"]).pack(anchor="w", padx=20, pady=(0, 4))
 
         self.password_entry = ctk.CTkEntry(
-            form_frame, placeholder_text="Enter your password",
-            show=self.secret_mask, width=320, height=45, corner_radius=8,
+            self.form_card, placeholder_text="Enter your password",
+            show=self.secret_mask, width=320, height=42, corner_radius=8,
+            border_width=1, border_color=COLORS["border"],
             font=ctk.CTkFont(size=14)
         )
-        self.password_entry.pack(padx=20, pady=(0, 10))
+        self.password_entry.pack(padx=20, pady=(0, 8))
 
         self.show_password_var = tk.BooleanVar(value=False)
         self.show_password_checkbox = ctk.CTkCheckBox(
-            form_frame,
+            self.form_card,
             text="Show password",
             variable=self.show_password_var,
             command=self._toggle_login_password_visibility,
@@ -171,54 +190,49 @@ class LoginWindow:
             checkbox_width=18,
             checkbox_height=18,
         )
-        self.show_password_checkbox.pack(anchor="w", padx=20, pady=(0, 12))
+        self.show_password_checkbox.pack(anchor="w", padx=20, pady=(0, 10))
 
         self.error_label = ctk.CTkLabel(
-            form_frame, text="",
+            self.form_card, text="",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["danger"]
         )
-        self.error_label.pack(pady=(0, 15))
+        self.error_label.pack(pady=(0, 10))
 
-        # Button frame with loader
-        self.button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        self.button_frame.pack(padx=20, pady=(0, 25))
+        self.button_frame = ctk.CTkFrame(self.form_card, fg_color="transparent")
+        self.button_frame.pack(padx=20, pady=(0, 20))
 
         self.login_button = ctk.CTkButton(
             self.button_frame, text="Login",
             command=self.attempt_login,
-            width=320, height=55, corner_radius=10,
+            width=320, height=48, corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(size=18, weight="bold"),
-            border_width=2,
-            border_color=COLORS["primary"]
+            font=ctk.CTkFont(size=16, weight="bold")
         )
         self.login_button.pack()
 
         self.forgot_password_button = ctk.CTkButton(
             self.button_frame,
             text="Forgot password?",
-            command=self.open_forgot_password_dialog,
+            command=self._render_reset_email_step,
             width=320,
-            height=34,
+            height=32,
             corner_radius=8,
             fg_color="transparent",
             text_color=COLORS["primary"],
-            hover_color=COLORS["bg_card"],
+            hover_color=COLORS["bg_main"],
             font=ctk.CTkFont(size=13, weight="bold"),
             border_width=0,
         )
-        self.forgot_password_button.pack(pady=(6, 0))
+        self.forgot_password_button.pack(pady=(4, 0))
 
         self.loader_label = ctk.CTkLabel(
             self.button_frame, text="",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["primary"]
         )
-        self.loader_label.pack(pady=(8, 0))
-        self.loader_index = 0
-        self.loader_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.loader_label.pack(pady=(4, 0))
 
         self.root.bind("<Return>", lambda e: self.attempt_login())
         self.email_entry.focus()
@@ -241,94 +255,71 @@ class LoginWindow:
         for entry in entries:
             entry.configure(show=show_value)
 
-    def _build_dialog_shell(self, title):
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title(title)
-        dialog.geometry("420x340")
-        dialog.resizable(False, False)
-        dialog.transient(self.root)
-        dialog.grab_set()
-
-        dialog_frame = ctk.CTkFrame(dialog, fg_color=COLORS["bg_main"])
-        dialog_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        return dialog, dialog_frame
-
-    def open_forgot_password_dialog(self):
-        if self.is_loading:
-            return
-
-        if self.reset_dialog:
-            try:
-                if self.reset_dialog.winfo_exists():
-                    self.reset_dialog.focus()
-                    return
-            except Exception:
-                self.reset_dialog = None
-
-        self.reset_admin = None
-        self.reset_dialog, self.reset_dialog_frame = self._build_dialog_shell("Forgot Password")
-        self.reset_dialog.protocol("WM_DELETE_WINDOW", self._close_reset_dialog)
-        self._render_reset_email_step()
-
-    def _close_reset_dialog(self):
-        if self.reset_dialog:
-            try:
-                if self.reset_dialog.winfo_exists():
-                    self.reset_dialog.destroy()
-            except Exception:
-                pass
-        self.reset_dialog = None
-        self.reset_admin = None
-
-    def _clear_reset_dialog_content(self):
-        for widget in self.reset_dialog_frame.winfo_children():
-            widget.destroy()
-
     def _render_reset_email_step(self):
-        self._clear_reset_dialog_content()
+        self._clear_form_card()
+        self.subtitle_label.configure(text="Password Reset")
+
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Reset Password",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", padx=20, pady=(16, 4))
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Enter your admin email to continue.",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
-        ).pack(anchor="w", pady=(0, 18))
+        ).pack(anchor="w", padx=20, pady=(0, 12))
 
         self.reset_email_entry = ctk.CTkEntry(
-            self.reset_dialog_frame,
+            self.form_card,
             placeholder_text="name@school.com",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             font=ctk.CTkFont(size=14),
         )
-        self.reset_email_entry.pack(anchor="w")
+        self.reset_email_entry.pack(padx=20, anchor="w")
         self.reset_email_entry.focus()
 
         self.reset_error_label = ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="",
             text_color=COLORS["danger"],
             font=ctk.CTkFont(size=12),
         )
-        self.reset_error_label.pack(anchor="w", pady=(8, 14))
+        self.reset_error_label.pack(anchor="w", padx=20, pady=(6, 10))
 
         ctk.CTkButton(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Continue",
             command=self._submit_reset_email,
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w")
+        ).pack(padx=20, anchor="w", pady=(0, 8))
+
+        ctk.CTkButton(
+            self.form_card,
+            text="← Back to Login",
+            command=self._render_login_step,
+            width=320,
+            height=32,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_main"],
+            font=ctk.CTkFont(size=12),
+            border_width=0,
+        ).pack(padx=20, anchor="w", pady=(0, 16))
+
+        self.root.bind("<Return>", lambda e: self._submit_reset_email())
 
     def _submit_reset_email(self):
         email = self.reset_email_entry.get().strip()
@@ -342,78 +333,98 @@ class LoginWindow:
 
         admin = self.session.query(Admin).filter_by(username=email, is_active=True).first()
         if not admin:
-            self.reset_error_label.configure(text="No active administrator account found for this email.")
+            self.reset_error_label.configure(text="No active administrator account found.")
             return
         if not admin.recovery_pin_hash:
-            self.reset_error_label.configure(text="Recovery PIN is not set for this admin. Contact another admin.")
+            self.reset_error_label.configure(text="Recovery PIN is not set for this admin.")
             return
 
         self.reset_admin = admin
         self._render_reset_pin_step()
 
     def _render_reset_pin_step(self):
-        self._clear_reset_dialog_content()
+        self._clear_form_card()
+        self.subtitle_label.configure(text="Verify Recovery PIN")
+
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Verify Recovery PIN",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", padx=20, pady=(16, 4))
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text=f"Email: {self.reset_admin.username}",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
-        ).pack(anchor="w", pady=(0, 6))
+        ).pack(anchor="w", padx=20, pady=(0, 2))
         ctk.CTkLabel(
-            self.reset_dialog_frame,
-            text="Enter the recovery PIN for this admin account.",
-            font=ctk.CTkFont(size=13),
+            self.form_card,
+            text="Enter the recovery PIN for this account.",
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
-        ).pack(anchor="w", pady=(0, 14))
+        ).pack(anchor="w", padx=20, pady=(0, 10))
 
         self.reset_pin_entry = ctk.CTkEntry(
-            self.reset_dialog_frame,
+            self.form_card,
             placeholder_text="Recovery PIN",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             show=self.secret_mask,
             font=ctk.CTkFont(size=14),
         )
-        self.reset_pin_entry.pack(anchor="w")
+        self.reset_pin_entry.pack(padx=20, anchor="w")
         self.reset_pin_entry.focus()
 
         self.reset_show_pin_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Show PIN",
             variable=self.reset_show_pin_var,
             command=lambda: self._toggle_secret_entries([self.reset_pin_entry], self.reset_show_pin_var.get()),
             text_color=COLORS["text_secondary"],
             checkbox_width=18,
             checkbox_height=18,
-        ).pack(anchor="w", pady=(8, 8))
+        ).pack(anchor="w", padx=20, pady=(6, 4))
 
         self.reset_error_label = ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="",
             text_color=COLORS["danger"],
             font=ctk.CTkFont(size=12),
         )
-        self.reset_error_label.pack(anchor="w", pady=(0, 14))
+        self.reset_error_label.pack(anchor="w", padx=20, pady=(0, 10))
 
         ctk.CTkButton(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Verify PIN",
             command=self._submit_reset_pin,
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w")
+        ).pack(padx=20, anchor="w", pady=(0, 8))
+
+        ctk.CTkButton(
+            self.form_card,
+            text="← Back to Login",
+            command=self._render_login_step,
+            width=320,
+            height=32,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_main"],
+            font=ctk.CTkFont(size=12),
+            border_width=0,
+        ).pack(padx=20, anchor="w", pady=(0, 16))
+
+        self.root.bind("<Return>", lambda e: self._submit_reset_pin())
 
     def _submit_reset_pin(self):
         pin = self.reset_pin_entry.get().strip()
@@ -427,46 +438,52 @@ class LoginWindow:
         self._render_new_password_step()
 
     def _render_new_password_step(self):
-        self._clear_reset_dialog_content()
+        self._clear_form_card()
+        self.subtitle_label.configure(text="New Password")
+
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Set New Password",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", padx=20, pady=(16, 4))
         ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Enter and confirm your new password.",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
-        ).pack(anchor="w", pady=(0, 14))
+        ).pack(anchor="w", padx=20, pady=(0, 10))
 
         self.reset_new_password_entry = ctk.CTkEntry(
-            self.reset_dialog_frame,
+            self.form_card,
             placeholder_text="New password",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             show=self.secret_mask,
             font=ctk.CTkFont(size=14),
         )
-        self.reset_new_password_entry.pack(anchor="w", pady=(0, 8))
+        self.reset_new_password_entry.pack(padx=20, anchor="w", pady=(0, 8))
 
         self.reset_confirm_password_entry = ctk.CTkEntry(
-            self.reset_dialog_frame,
+            self.form_card,
             placeholder_text="Confirm new password",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             show=self.secret_mask,
             font=ctk.CTkFont(size=14),
         )
-        self.reset_confirm_password_entry.pack(anchor="w")
+        self.reset_confirm_password_entry.pack(padx=20, anchor="w")
         self.reset_new_password_entry.focus()
 
         self.reset_show_new_pw_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Show password fields",
             variable=self.reset_show_new_pw_var,
             command=lambda: self._toggle_secret_entries(
@@ -476,27 +493,43 @@ class LoginWindow:
             text_color=COLORS["text_secondary"],
             checkbox_width=18,
             checkbox_height=18,
-        ).pack(anchor="w", pady=(8, 8))
+        ).pack(anchor="w", padx=20, pady=(6, 4))
 
         self.reset_error_label = ctk.CTkLabel(
-            self.reset_dialog_frame,
+            self.form_card,
             text="",
             text_color=COLORS["danger"],
             font=ctk.CTkFont(size=12),
         )
-        self.reset_error_label.pack(anchor="w", pady=(0, 14))
+        self.reset_error_label.pack(anchor="w", padx=20, pady=(0, 10))
 
         ctk.CTkButton(
-            self.reset_dialog_frame,
+            self.form_card,
             text="Reset Password",
             command=self._submit_new_password,
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
             fg_color=COLORS["success"],
             hover_color="#2d8f47",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w")
+        ).pack(padx=20, anchor="w", pady=(0, 8))
+
+        ctk.CTkButton(
+            self.form_card,
+            text="← Cancel",
+            command=self._render_login_step,
+            width=320,
+            height=32,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=COLORS["text_secondary"],
+            hover_color=COLORS["bg_main"],
+            font=ctk.CTkFont(size=12),
+            border_width=0,
+        ).pack(padx=20, anchor="w", pady=(0, 16))
+
+        self.root.bind("<Return>", lambda e: self._submit_new_password())
 
     def _submit_new_password(self):
         new_password = self.reset_new_password_entry.get()
@@ -524,118 +557,125 @@ class LoginWindow:
             self.reset_error_label.configure(text=f"Could not reset password: {err}")
             return
 
-        self._close_reset_dialog()
-        self.password_entry.delete(0, "end")
-        self.error_label.configure(text="")
-        self.email_entry.focus()
-        messagebox.showinfo("Success", "Password reset complete. You can now log in with the new password.")
+        messagebox.showinfo("Success", "Password reset complete. You can now log in with your new password.")
+        self._render_login_step()
 
-    def _prompt_recovery_pin_setup(self, admin):
-        if admin.recovery_pin_hash:
-            return True
 
-        dialog, dialog_frame = self._build_dialog_shell("Set Recovery PIN")
-        dialog.geometry("420x360")
-        setup_state = {"completed": False}
+    def _render_setup_pin_step(self, admin):
+        self._clear_form_card()
+        self.subtitle_label.configure(text="Set Recovery PIN")
 
         ctk.CTkLabel(
-            dialog_frame,
+            self.form_card,
             text="Set Recovery PIN",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"],
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", padx=20, pady=(16, 4))
         ctk.CTkLabel(
-            dialog_frame,
-            text="A recovery PIN is required for forgot-password reset.",
-            font=ctk.CTkFont(size=13),
+            self.form_card,
+            text="A recovery PIN is required for account recovery.",
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["text_secondary"],
-        ).pack(anchor="w", pady=(0, 18))
+        ).pack(anchor="w", padx=20, pady=(0, 10))
 
-        pin_entry = ctk.CTkEntry(
-            dialog_frame,
+        self.setup_pin_entry = ctk.CTkEntry(
+            self.form_card,
             placeholder_text="Recovery PIN (4+ digits)",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             show=self.secret_mask,
             font=ctk.CTkFont(size=14),
         )
-        pin_entry.pack(anchor="w", pady=(0, 8))
+        self.setup_pin_entry.pack(padx=20, anchor="w", pady=(0, 8))
 
-        confirm_entry = ctk.CTkEntry(
-            dialog_frame,
+        self.setup_confirm_pin_entry = ctk.CTkEntry(
+            self.form_card,
             placeholder_text="Confirm recovery PIN",
-            width=360,
+            width=320,
             height=42,
             corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
             show=self.secret_mask,
             font=ctk.CTkFont(size=14),
         )
-        confirm_entry.pack(anchor="w")
-        pin_entry.focus()
+        self.setup_confirm_pin_entry.pack(padx=20, anchor="w")
+        self.setup_pin_entry.focus()
 
-        show_pin_var = tk.BooleanVar(value=False)
+        self.setup_show_pin_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
-            dialog_frame,
+            self.form_card,
             text="Show PIN fields",
-            variable=show_pin_var,
-            command=lambda: self._toggle_secret_entries([pin_entry, confirm_entry], show_pin_var.get()),
+            variable=self.setup_show_pin_var,
+            command=lambda: self._toggle_secret_entries(
+                [self.setup_pin_entry, self.setup_confirm_pin_entry],
+                self.setup_show_pin_var.get(),
+            ),
             text_color=COLORS["text_secondary"],
             checkbox_width=18,
             checkbox_height=18,
-        ).pack(anchor="w", pady=(8, 8))
+        ).pack(anchor="w", padx=20, pady=(6, 4))
 
-        error_label = ctk.CTkLabel(
-            dialog_frame,
+        self.setup_pin_error_label = ctk.CTkLabel(
+            self.form_card,
             text="",
             text_color=COLORS["danger"],
             font=ctk.CTkFont(size=12),
         )
-        error_label.pack(anchor="w", pady=(0, 14))
-
-        def save_pin():
-            pin_value = pin_entry.get().strip()
-            confirm_value = confirm_entry.get().strip()
-            if not pin_value or not confirm_value:
-                error_label.configure(text="Both PIN fields are required.")
-                return
-            if not pin_value.isdigit() or len(pin_value) < 4:
-                error_label.configure(text="Recovery PIN must be at least 4 digits.")
-                return
-            if pin_value != confirm_value:
-                error_label.configure(text="PIN values do not match.")
-                return
-
-            try:
-                admin_record = self.session.query(Admin).filter_by(id=admin.id, is_active=True).first()
-                if not admin_record:
-                    error_label.configure(text="Admin account is no longer available.")
-                    return
-                admin_record.recovery_pin_hash = self._hash_secret(pin_value)
-                self.session.commit()
-                admin.recovery_pin_hash = admin_record.recovery_pin_hash
-            except Exception as err:
-                self.session.rollback()
-                error_label.configure(text=f"Could not save recovery PIN: {err}")
-                return
-
-            setup_state["completed"] = True
-            dialog.destroy()
+        self.setup_pin_error_label.pack(anchor="w", padx=20, pady=(0, 10))
 
         ctk.CTkButton(
-            dialog_frame,
+            self.form_card,
             text="Save PIN and Continue",
-            command=save_pin,
-            width=360,
+            command=lambda: self._submit_setup_pin(admin),
+            width=320,
             height=42,
             corner_radius=8,
             fg_color=COLORS["success"],
             hover_color="#2d8f47",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w")
+        ).pack(padx=20, anchor="w", pady=(0, 16))
 
-        self.root.wait_window(dialog)
-        return setup_state["completed"]
+        self.root.bind("<Return>", lambda e: self._submit_setup_pin(admin))
+
+    def _submit_setup_pin(self, admin):
+        pin_value = self.setup_pin_entry.get().strip()
+        confirm_value = self.setup_confirm_pin_entry.get().strip()
+
+        if not pin_value or not confirm_value:
+            self.setup_pin_error_label.configure(text="Both PIN fields are required.")
+            return
+        if not pin_value.isdigit() or len(pin_value) < 4:
+            self.setup_pin_error_label.configure(text="Recovery PIN must be at least 4 digits.")
+            return
+        if pin_value != confirm_value:
+            self.setup_pin_error_label.configure(text="PIN values do not match.")
+            return
+
+        try:
+            admin_record = self.session.query(Admin).filter_by(id=admin.id, is_active=True).first()
+            if not admin_record:
+                self.setup_pin_error_label.configure(text="Admin account is no longer available.")
+                return
+            admin_record.recovery_pin_hash = self._hash_secret(pin_value)
+            self.session.commit()
+            admin.recovery_pin_hash = admin_record.recovery_pin_hash
+        except Exception as err:
+            self.session.rollback()
+            self.setup_pin_error_label.configure(text=f"Could not save recovery PIN: {err}")
+            return
+
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        self.is_loading = False
+        if hasattr(self, "loader_label") and self.loader_label.winfo_exists():
+            self.loader_label.configure(text="")
+        self.on_success_callback(admin)
 
     def attempt_login(self):
         email = self.email_entry.get().strip()
@@ -667,26 +707,36 @@ class LoginWindow:
 
     def _complete_login(self, email, password):
         """Complete the login process after loader animation"""
-        admin = self.session.query(Admin).filter_by(username=email, is_active=True).first()
-        if not admin:
-            self.error_label.configure(text="Invalid email or password")
-            self._reset_login()
-            return
+        try:
+            admin = self.session.query(Admin).filter_by(username=email, is_active=True).first()
+            if not admin:
+                self.error_label.configure(text="Invalid email or password")
+                self._reset_login()
+                return
 
-        if admin.password_hash != self._hash_secret(password):
-            self.error_label.configure(text="Incorrect password")
-            self._reset_login()
-            return
+            if admin.password_hash != self._hash_secret(password):
+                self.error_label.configure(text="Incorrect password")
+                self._reset_login()
+                return
 
-        if not self._prompt_recovery_pin_setup(admin):
-            self.error_label.configure(text="Recovery PIN setup is required before access is granted.")
-            self._reset_login()
-            return
+            if not admin.recovery_pin_hash:
+                self.is_loading = False
+                if hasattr(self, "loader_label") and self.loader_label.winfo_exists():
+                    self.loader_label.configure(text="")
+                self._render_setup_pin_step(admin)
+                return
 
-        self.session.close()
-        self.is_loading = False
-        self.loader_label.configure(text="")
-        self.on_success_callback(admin)
+            try:
+                self.session.close()
+            except Exception:
+                pass
+            self.is_loading = False
+            if hasattr(self, "loader_label") and self.loader_label.winfo_exists():
+                self.loader_label.configure(text="")
+            self.on_success_callback(admin)
+        except Exception as err:
+            self.error_label.configure(text=f"Login failed: {err}")
+            self._reset_login()
 
     def _reset_login(self):
         """Reset login button and fields"""

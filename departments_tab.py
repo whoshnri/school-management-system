@@ -68,7 +68,7 @@ class DepartmentsTab(ctk.CTkFrame):
         # Column headers
         col_frame = ctk.CTkFrame(self, fg_color=COLORS["primary"], corner_radius=0)
         col_frame.pack(fill="x", padx=20)
-        for text, w in [("#", 40), ("Subject Name", 300), ("Actions", 160)]:
+        for text, w in [("#", 40), ("Subject Name", 260), ("Classes Allowed", 200), ("Actions", 140)]:
             ctk.CTkLabel(col_frame, text=text, width=w,
                          font=ctk.CTkFont(size=12, weight="bold"),
                          text_color="white").pack(side="left", padx=8, pady=8)
@@ -129,10 +129,39 @@ class DepartmentsTab(ctk.CTkFrame):
             ctk.CTkLabel(row, text=str(i + 1), width=40,
                          text_color=COLORS["text_secondary"],
                          font=ctk.CTkFont(size=11)).pack(side="left", padx=8, pady=7)
-            ctk.CTkLabel(row, text=subj.subject_name, width=300,
+            ctk.CTkLabel(row, text=subj.subject_name, width=260,
                          text_color=COLORS["text_primary"],
                          font=ctk.CTkFont(size=12),
                          anchor="w").pack(side="left", padx=8)
+
+            classes_str = subj.target_classes or "SSS1,SSS2,SSS3"
+            allowed = [c.strip() for c in classes_str.split(",") if c.strip()]
+
+            cls_frame = ctk.CTkFrame(row, fg_color="transparent", width=200)
+            cls_frame.pack(side="left", padx=4)
+
+            def make_toggle(target_subj, c_name):
+                def toggle():
+                    curr_classes = [c.strip() for c in (target_subj.target_classes or "SSS1,SSS2,SSS3").split(",") if c.strip()]
+                    if c_name in curr_classes:
+                        curr_classes.remove(c_name)
+                    else:
+                        curr_classes.append(c_name)
+                    ordered = [c for c in ["SSS1", "SSS2", "SSS3"] if c in curr_classes]
+                    target_subj.target_classes = ",".join(ordered)
+                    self.db.commit()
+                    self.notify_subject_changed()
+                return toggle
+
+            for c_name in ["SSS1", "SSS2", "SSS3"]:
+                var = ctk.BooleanVar(value=(c_name in allowed))
+                cb = ctk.CTkCheckBox(
+                    cls_frame, text=c_name, variable=var,
+                    command=make_toggle(subj, c_name),
+                    width=55, height=20, font=ctk.CTkFont(size=11),
+                    checkbox_width=16, checkbox_height=16
+                )
+                cb.pack(side="left", padx=2)
 
             btn_frame = ctk.CTkFrame(row, fg_color="transparent")
             btn_frame.pack(side="left", padx=8)
@@ -146,6 +175,7 @@ class DepartmentsTab(ctk.CTkFrame):
                 fg_color=COLORS["danger"], hover_color="#c62828",
                 command=lambda sid=subj.id, sname=subj.subject_name: self._remove_subject(sid, sname)
             ).pack(side="left", padx=3)
+
 
     def _add_subject(self):
         dept = self.db.query(Department).filter_by(name=self._current_dept).first()
@@ -162,8 +192,10 @@ class DepartmentsTab(ctk.CTkFrame):
         try:
             self.db.add(DepartmentSubject(dept_id=dept_id, subject_name=subject_name))
             self.db.commit()
+            _ensure_core_subject(self.db, subject_name)
             self.error_label.configure(text="")
             self.load_department(self._current_dept)
+            self.notify_subject_changed()
         except IntegrityError:
             self.db.rollback()
             self.error_label.configure(text=f"'{subject_name}' already exists in this department.")
@@ -183,6 +215,8 @@ class DepartmentsTab(ctk.CTkFrame):
             if subj:
                 subj.subject_name = new_name
                 self.db.commit()
+                _ensure_core_subject(self.db, new_name)
+                self.notify_subject_changed()
             self.error_label.configure(text="")
             self.load_department(self._current_dept)
         except IntegrityError:
@@ -200,4 +234,37 @@ class DepartmentsTab(ctk.CTkFrame):
         if subj:
             self.db.delete(subj)
             self.db.commit()
+            self.notify_subject_changed()
         self.load_department(self._current_dept)
+
+    def add_on_subject_changed_callback(self, cb):
+        if not hasattr(self, "_callbacks"):
+            self._callbacks = []
+        self._callbacks.append(cb)
+
+    def notify_subject_changed(self):
+        for cb in getattr(self, "_callbacks", []):
+            try:
+                cb()
+            except Exception:
+                pass
+
+
+def _ensure_core_subject(db, subject_name: str):
+    """Ensure subject exists in core Subject table."""
+    try:
+        from models import Subject
+        existing = db.query(Subject).filter_by(subject_name=subject_name).first()
+        if not existing:
+            base_code = "".join(e for e in subject_name if e.isalnum()).upper()[:5] or "SUBJ"
+            code = base_code
+            counter = 1
+            while db.query(Subject).filter_by(subject_code=code).first():
+                code = f"{base_code[:3]}{counter:02d}"
+                counter += 1
+            core_sub = Subject(subject_code=code, subject_name=subject_name)
+            db.add(core_sub)
+            db.commit()
+    except Exception:
+        db.rollback()
+

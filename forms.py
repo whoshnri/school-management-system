@@ -307,8 +307,6 @@ class MarksEntryTab(ctk.CTkFrame):
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
         ).pack(side="left", padx=(15, 10), pady=15)
 
-        self._load_filter_data()
-
         # Marks Grid
         self.marks_frame = ctk.CTkScrollableFrame(
             self,
@@ -318,6 +316,8 @@ class MarksEntryTab(ctk.CTkFrame):
             scrollbar_button_hover_color=COLORS["primary_hover"]
         )
         self.marks_frame.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
+
+        self._load_filter_data()
 
         # Headers
         headers = ["Subject", "CA (30)", "Exam (70)", "Total", "Grade"]
@@ -483,9 +483,24 @@ class MarksEntryTab(ctk.CTkFrame):
         self.load_existing_marks()
 
     def load_subjects(self):
+        # Refresh subjects from DB
+        from models import Subject
+        self.subjects = self.session.query(Subject).all()
+
         # Update subject count display
         if hasattr(self, 'subject_count_label'):
             self.subject_count_label.configure(text=f"({len(self.subjects)} subjects)")
+
+        # Clear previous row widgets
+        for w in list(self.marks_frame.winfo_children()):
+            try:
+                info = w.grid_info()
+                if info and int(info.get('row', 0)) > 0:
+                    w.destroy()
+            except Exception:
+                pass
+
+        self.entries = {}
 
         for i, sub in enumerate(self.subjects, 1):
             sub_label = ctk.CTkLabel(
@@ -656,9 +671,6 @@ class MarksEntryTab(ctk.CTkFrame):
 
     def load_existing_marks(self):
         """Load existing marks for the selected student and term"""
-        if not self.entries:
-            return
-            
         student_str = self.student_var.get()
         if not student_str or student_str == "No Students":
             return
@@ -672,14 +684,29 @@ class MarksEntryTab(ctk.CTkFrame):
             term_value = self.term_var.get()
             term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
 
-            from models import DepartmentSubject
-            dept_subjects = self.session.query(DepartmentSubject).filter_by(dept_id=student.dept_id).all()
+            from models import get_department_subjects_for_class, Subject
+            dept_subjects = get_department_subjects_for_class(self.session, student.dept_id, student.class_name) if student.dept_id else []
             allowed_sub_names = [ds.subject_name for ds in dept_subjects]
-            allowed_sub_ids = [s.id for s in self.subjects if s.subject_name in allowed_sub_names]
+
+            from departments_tab import _ensure_core_subject
+            for ds_name in allowed_sub_names:
+                _ensure_core_subject(self.session, ds_name)
+
+            db_subjects = self.session.query(Subject).all()
+            if set(s.id for s in db_subjects) != set(self.entries.keys()):
+                self.subjects = db_subjects
+                self.load_subjects()
+
+            if not self.entries:
+                return
+
+            allowed_sub_ids = [s.id for s in self.subjects if not allowed_sub_names or s.subject_name in allowed_sub_names]
 
             visible_count = 0
             for sub in self.subjects:
-                widgets = self.entries[sub.id]
+                widgets = self.entries.get(sub.id)
+                if not widgets:
+                    continue
                 
                 if sub.id not in allowed_sub_ids:
                     for w in widgets['row_widgets']:
@@ -770,8 +797,16 @@ class MarksEntryTab(ctk.CTkFrame):
                 )
                 return
 
-            for sub in self.subjects:
-                widgets = self.entries[sub.id]
+            from models import get_department_subjects_for_class
+            dept_subjects = get_department_subjects_for_class(self.session, student.dept_id, student.class_name) if student.dept_id else []
+            allowed_sub_names = set(ds.subject_name for ds in dept_subjects)
+
+            target_subjects = [s for s in self.subjects if not allowed_sub_names or s.subject_name in allowed_sub_names]
+
+            for sub in target_subjects:
+                widgets = self.entries.get(sub.id)
+                if not widgets:
+                    continue
                 try:
                     ca = float(widgets['ca'].get() or 0)
                 except ValueError:
@@ -798,7 +833,7 @@ class MarksEntryTab(ctk.CTkFrame):
 
             self.session.commit()
             from ui_components import show_info
-            show_info(self, "Saved", f"Success: {saved_count} marks saved for {student.name} (Term {term})")
+            show_info(self, "Saved", f"Success: {saved_count} marks saved for {student.full_name} (Term {term})")
 
         except Exception as e:
             self.session.rollback()

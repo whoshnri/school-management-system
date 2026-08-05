@@ -163,7 +163,7 @@ class ReportCardEditWindow(ctk.CTkToplevel):
             PARENT_SIGNATURE_LABEL,
             self.report_card.parent_signature or "",
         )
-        self.next_term_resumption_date = self._entry_field(
+        self.next_term_resumption_date = self._date_entry_field(
             scroll,
             "Next Term Resumption Date",
             self.report_card.next_term_resumption_date or "",
@@ -241,6 +241,46 @@ class ReportCardEditWindow(ctk.CTkToplevel):
             entry.insert(0, value)
         return entry
 
+    def _date_entry_field(self, parent, label, value):
+        container = ctk.CTkFrame(parent, fg_color="transparent")
+        container.pack(fill="x", pady=4)
+
+        row = ctk.CTkFrame(container, fg_color="transparent")
+        row.pack(fill="x")
+
+        ctk.CTkLabel(
+            row,
+            text=label,
+            width=280,
+            anchor="w",
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(side="left")
+
+        entry = ctk.CTkEntry(
+            row,
+            width=360,
+            height=38,
+            placeholder_text="YYYY-MM-DD (e.g. 2026-09-15)",
+            text_color=COLORS["text_primary"],
+            **input_style(),
+        )
+        entry.pack(side="right")
+        if value:
+            entry.insert(0, value)
+
+        guide_row = ctk.CTkFrame(container, fg_color="transparent")
+        guide_row.pack(fill="x")
+        ctk.CTkLabel(
+            guide_row,
+            text="Guideline: Must be in YYYY-MM-DD (e.g. 2026-09-15) or DD/MM/YYYY format",
+            font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"),
+            text_color=COLORS["text_secondary"],
+            anchor="e",
+        ).pack(fill="x", pady=(2, 4))
+
+        return entry
+
     def save(self):
         try:
             for field, var in self.rating_vars.items():
@@ -258,7 +298,25 @@ class ReportCardEditWindow(ctk.CTkToplevel):
             self.report_card.teacher_signature = self.teacher_signature.get().strip()
             self.report_card.principal_signature = self.principal_signature.get().strip()
             self.report_card.parent_signature = self.parent_signature.get().strip()
-            self.report_card.next_term_resumption_date = self.next_term_resumption_date.get().strip()
+
+            resumption_raw = self.next_term_resumption_date.get().strip()
+            if resumption_raw:
+                parsed_date = None
+                for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%B %d, %Y", "%d %B, %Y"):
+                    try:
+                        parsed_date = datetime.strptime(resumption_raw, fmt)
+                        break
+                    except ValueError:
+                        pass
+                if not parsed_date:
+                    raise ValueError(
+                        f"Invalid Next Term Resumption Date: '{resumption_raw}'.\n"
+                        "Format must strictly be YYYY-MM-DD (e.g. 2026-09-15) or DD/MM/YYYY."
+                    )
+                self.report_card.next_term_resumption_date = parsed_date.strftime("%Y-%m-%d")
+            else:
+                self.report_card.next_term_resumption_date = None
+
             self.report_card.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             self.session.commit()
@@ -300,6 +358,14 @@ class ReportCardsTab(ctk.CTkFrame):
             text_color=COLORS["text_primary"],
         ).pack(side="left")
 
+        self.student_count_label = ctk.CTkLabel(
+            top_row,
+            text="(0 students)",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=COLORS["text_secondary"],
+        )
+        self.student_count_label.pack(side="left", padx=10)
+
         # Filters frame on new row inside header
         filters_frame = ctk.CTkFrame(header, fg_color="transparent")
         filters_frame.pack(fill="x", padx=20, pady=(10, 15))
@@ -334,6 +400,19 @@ class ReportCardsTab(ctk.CTkFrame):
             **input_style(),
         )
         self.student_combo.pack(side="left", padx=(0, 5))
+
+        # Load button
+        ctk.CTkButton(
+            filters_frame,
+            text=TextLabelManager.get_button_text('load'),
+            command=self._cascade_students,
+            width=90,
+            height=38,
+            corner_radius=8,
+            fg_color=COLORS["secondary"],
+            hover_color=COLORS["primary"],
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+        ).pack(side="left", padx=(10, 5))
 
         self.content = ctk.CTkScrollableFrame(
             self,
@@ -381,6 +460,9 @@ class ReportCardsTab(ctk.CTkFrame):
         self.students = query.order_by(Student.full_name).all()
         labels = [f"{student.full_name} ({student.student_id})" for student in self.students]
         
+        if hasattr(self, "student_count_label"):
+            self.student_count_label.configure(text=f"({len(self.students)} students)")
+
         if not labels:
             self.student_combo.configure(values=["No students found"], state="disabled")
             self.student_var.set("No students found")
@@ -392,6 +474,7 @@ class ReportCardsTab(ctk.CTkFrame):
         if not self.student_var.get() or self.student_var.get() not in labels:
             self.student_var.set(labels[0])
         self.on_student_selected(self.student_var.get())
+
 
     def on_student_selected(self, _value=None):
         label = self.student_var.get()
@@ -478,10 +561,23 @@ class ReportCardsTab(ctk.CTkFrame):
                 student_id=student.id,
                 term=term,
             ).first()
-            marks_count = self.session.query(Mark).filter_by(
-                student_id=student.id,
-                term=term,
-            ).count()
+            from models import get_department_subjects_for_class, Subject
+            expected_subs = get_department_subjects_for_class(self.session, student.dept_id, student.class_name) if student.dept_id else []
+            expected_names = [ds.subject_name for ds in expected_subs]
+            total_expected = len(expected_subs)
+
+            if expected_names:
+                marks_count = self.session.query(Mark).join(Subject).filter(
+                    Mark.student_id == student.id,
+                    Mark.term == term,
+                    Subject.subject_name.in_(expected_names)
+                ).count()
+            else:
+                marks_count = self.session.query(Mark).filter_by(
+                    student_id=student.id,
+                    term=term,
+                ).count()
+
             complete = is_report_card_complete(report_card, student.id, term, self.session)
             row_bg = COLORS["sheet_row"] if row_index % 2 == 1 else COLORS["sheet_header"]
             cols = []
@@ -497,8 +593,13 @@ class ReportCardsTab(ctk.CTkFrame):
                 text_color=COLORS["text_primary"],
             ))
 
-            grades_text = f"{marks_count} subjects" if marks_count else "No grades"
-            grades_color = COLORS["text_primary"] if marks_count else COLORS["danger"]
+            if total_expected > 0:
+                grades_text = f"{marks_count}/{total_expected} subjects graded" if marks_count else f"0/{total_expected} subjects graded"
+                grades_color = COLORS["text_primary"] if marks_count >= total_expected else (COLORS["warning"] if marks_count > 0 else COLORS["danger"])
+            else:
+                grades_text = f"{marks_count} subjects graded" if marks_count else "No grades"
+                grades_color = COLORS["text_primary"] if marks_count else COLORS["danger"]
+
             cols.append(ctk.CTkLabel(
                 list_frame,
                 text=grades_text,
