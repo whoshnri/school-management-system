@@ -82,6 +82,7 @@ export default function CoverageMap({
 
   const point = result?.point ?? null;
   const pointColor = result ? STATUS_COLOR[result.status] : "#334155";
+  const pointResult = point && result ? result : null;
 
   return (
     <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-amber-100">
@@ -97,7 +98,7 @@ export default function CoverageMap({
           pathOptions={{ color: "#d97706", weight: 2, fillOpacity: 0.1 }}
         />
 
-        {point && (
+        {point && pointResult && (
           <>
             <Circle
               center={[point.lat, point.lng]}
@@ -111,11 +112,11 @@ export default function CoverageMap({
             >
               <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent>
                 <div className="text-xs">
-                  <p className="font-semibold">{result.normalizedPostcode}</p>
+                  <p className="font-semibold">{pointResult.normalizedPostcode}</p>
                   <p>
                     {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
                   </p>
-                  <p className="capitalize">{result.status.replace("-", " ")}</p>
+                  <p className="capitalize">{pointResult.status.replace("-", " ")}</p>
                 </div>
               </Tooltip>
             </CircleMarker>

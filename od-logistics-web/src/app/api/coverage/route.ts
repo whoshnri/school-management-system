@@ -13,9 +13,10 @@ import {
 import type { Coordinates, CoverageResponse } from "@/lib/coverage-types";
 
 type ProviderName = "postcodes.io" | "google" | "nominatim";
+type SecondaryProviderName = "google" | "nominatim";
 
-interface GeocodeResult {
-  provider: ProviderName;
+interface GeocodeResult<TProvider extends ProviderName = ProviderName> {
+  provider: TProvider;
   point: Coordinates;
 }
 
@@ -114,7 +115,7 @@ async function geocodeWithPostcodesIo(postcode: string): Promise<GeocodeResult |
 
 async function geocodeWithSecondaryProvider(
   postcode: string,
-): Promise<GeocodeResult | null> {
+): Promise<GeocodeResult<SecondaryProviderName> | null> {
   const googleApiKey = process.env.GOOGLE_GEOCODING_API_KEY?.trim();
 
   if (googleApiKey) {
@@ -130,7 +131,7 @@ async function geocodeWithSecondaryProvider(
 async function geocodeWithGoogle(
   postcode: string,
   apiKey: string,
-): Promise<GeocodeResult | null> {
+): Promise<GeocodeResult<"google"> | null> {
   try {
     const params = new URLSearchParams({
       components: `postal_code:${postcode}|country:GB`,
@@ -169,7 +170,9 @@ async function geocodeWithGoogle(
   }
 }
 
-async function geocodeWithNominatim(postcode: string): Promise<GeocodeResult | null> {
+async function geocodeWithNominatim(
+  postcode: string,
+): Promise<GeocodeResult<"nominatim"> | null> {
   try {
     const params = new URLSearchParams({
       postalcode: postcode,
@@ -213,7 +216,7 @@ async function geocodeWithNominatim(postcode: string): Promise<GeocodeResult | n
 
 function resolveCoordinate(
   primary: GeocodeResult | null,
-  secondary: GeocodeResult | null,
+  secondary: GeocodeResult<SecondaryProviderName> | null,
   outlierThresholdKm: number,
 ): {
   point: Coordinates;

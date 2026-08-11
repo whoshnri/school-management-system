@@ -67,7 +67,7 @@ export function CoverageExperience() {
 
       if (!response.ok) {
         setResult(null);
-        setError(payload.error ?? "Unable to check coverage right now.");
+        setError(readApiError(payload) ?? "Unable to check coverage right now.");
         return;
       }
 
@@ -224,4 +224,12 @@ function parseEnvNumber(name: string, fallback: number): number {
 
   const parsed = Number.parseFloat(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readApiError(payload: CoverageResponse | { error?: string }): string | null {
+  if ("error" in payload && typeof payload.error === "string") {
+    return payload.error;
+  }
+
+  return null;
 }
