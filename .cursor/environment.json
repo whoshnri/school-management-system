@@ -1,0 +1,4 @@
+{
+  "name": "GFA Admin Panel",
+  "install": "bash .cursor/install.sh"
+}
