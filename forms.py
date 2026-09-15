@@ -456,11 +456,12 @@ class MarksEntryTab(ctk.CTkFrame):
         sess_name = self.session_var.get()
         dept_name = self.dept_var.get()
         cls_name = self.class_var.get()
+        previous = self.student_var.get()
         
-        if sess_name != "All Sessions":
+        if sess_name and sess_name != "All Sessions":
             sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
             if sess: query = query.filter_by(session_id=sess.id)
-        if dept_name != "All Departments":
+        if dept_name and dept_name != "All Departments":
             dept = self.session.query(Department).filter_by(name=dept_name).first()
             if dept: query = query.filter_by(dept_id=dept.id)
         if cls_name and cls_name != "All Classes":
@@ -469,11 +470,14 @@ class MarksEntryTab(ctk.CTkFrame):
         students = query.order_by(Student.full_name).all()
         self.active_students = students
         if students:
-            student_list = [f"{s.student_id} - {s.name}" for s in students]
-            self.student_combo.configure(values=student_list)
-            self.student_var.set(student_list[0])
+            student_list = [f"{s.student_id} - {s.full_name}" for s in students]
+            self.student_combo.configure(values=student_list, state="normal")
+            if previous in student_list:
+                self.student_var.set(previous)
+            else:
+                self.student_var.set(student_list[0])
         else:
-            self.student_combo.configure(values=["No Students"])
+            self.student_combo.configure(values=["No Students"], state="disabled")
             self.student_var.set("No Students")
             
         self.load_existing_marks()
@@ -884,6 +888,7 @@ class BroadsheetTab(ctk.CTkFrame):
             height=40,
             **input_style(),
         )
+        self.class_filter_raw.set(class_values[0])
         self.class_filter_raw.pack(side="left", padx=5)
 
         ctk.CTkLabel(
@@ -900,6 +905,7 @@ class BroadsheetTab(ctk.CTkFrame):
             height=40,
             **input_style(),
         )
+        self.term_filter.set("1 - First Term")
         self.term_filter.pack(side="left", padx=5)
 
         ctk.CTkButton(
@@ -958,6 +964,9 @@ class BroadsheetTab(ctk.CTkFrame):
             scrollbar_button_hover_color=COLORS["primary_hover"]
         )
         self.sheet_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+        self.class_filter_raw.configure(command=lambda _value: self.load_sheet())
+        self.term_filter.configure(command=lambda _value: self.load_sheet())
+        self.after(50, self.load_sheet)
 
     def _sheet_cell(self, parent, text, row, column, width=70, anchor="w", bold=False, bg=None):
         if bg is None:
@@ -1022,8 +1031,19 @@ class BroadsheetTab(ctk.CTkFrame):
 
         data_map = {s.id: {} for s in self.students}
         for m in marks:
-            if m.student_id in data_map:
-                data_map[m.student_id][m.subject_id] = m.total
+            if m.student_id not in data_map:
+                continue
+            ca = float(m.continuous_assessment or 0)
+            exam = float(m.exams or 0)
+            total = ca + exam
+            if total <= 0 and m.total not in (None, ""):
+                try:
+                    total = float(m.total)
+                except (TypeError, ValueError):
+                    total = 0
+            if total == 0 and not ca and not exam and not m.total:
+                continue
+            data_map[m.student_id][m.subject_id] = total
 
         self.broadsheet_data = data_map
         self.export_btn.configure(state="normal")
@@ -1440,29 +1460,26 @@ class AttendanceTab(ctk.CTkFrame):
         dept_name = self.dept_var.get()
         cls_name = self.class_var.get()
         
-        if sess_name != "All Sessions":
+        if sess_name and sess_name != "All Sessions":
             sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
             if sess:
                 query = query.filter_by(session_id=sess.id)
                 
-        if dept_name != "All Departments":
+        if dept_name and dept_name != "All Departments":
             dept = self.session.query(Department).filter_by(name=dept_name).first()
             if dept:
-                query = query.filter_by(department_id=dept.id)
+                query = query.filter_by(dept_id=dept.id)
                 
         if cls_name:
             query = query.filter_by(class_name=cls_name)
             
-        students = query.all()
-        student_names = ["All Students"] + [f"{s.id} - {s.surname} {getattr(s, 'other_names', None) or s.firstname or ''}" for s in students]
+        students = query.order_by(Student.full_name).all()
+        student_names = ["All Students"] + [f"{s.student_id} - {s.full_name}" for s in students]
         self.student_combo.configure(values=student_names)
-        if student_names:
-            self.student_var.set(student_names[0])
-            self.on_class_selected(cls_name)
-        else:
-            self.student_var.set("All Students")
+        self.student_var.set(student_names[0])
+        self.on_class_selected()
 
-    def on_class_selected(self, value):
+    def on_class_selected(self, _value=None):
         self.current_class = self.class_var.get()
         self.load_sheet()
 
@@ -1486,7 +1503,8 @@ class AttendanceTab(ctk.CTkFrame):
 
         student_filter = self.student_var.get() if hasattr(self, 'student_var') else "All Students"
         if student_filter and student_filter != "All Students":
-            query = query.filter(Student.full_name == student_filter)
+            student_id = student_filter.split(" - ", 1)[0].strip()
+            query = query.filter_by(student_id=student_id)
 
         self.students = query.order_by(Student.full_name).all()
 

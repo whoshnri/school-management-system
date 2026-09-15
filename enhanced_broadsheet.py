@@ -1,17 +1,16 @@
 """
-Enhanced Broadsheet System with Multi-Term Support
-Supports comprehensive reporting with term comparisons and statistics
+Broadsheet tab: class results grid with class / department / term / session filters.
 """
-import tkinter as tk
-import customtkinter as ctk
-from tkinter import messagebox, filedialog
-from models import Session, Student, Subject, Mark
-from calculations import GradeCalculator
 import csv
 from datetime import datetime
-from ui_components import TextLabelManager
 
-# Modern color palette
+import customtkinter as ctk
+from tkinter import messagebox, filedialog
+
+from models import Session, Student, Subject, Mark, Department, AcademicSession, get_department_subjects_for_class
+from calculations import GradeCalculator
+from ui_components import TextLabelManager, safe_export_filename
+
 COLORS = {
     "primary": "#1a73e8",
     "primary_hover": "#1557b0",
@@ -23,7 +22,10 @@ COLORS = {
     "bg_card": "#f8f9fa",
     "text_primary": "#202124",
     "text_secondary": "#5f6368",
-    "border": "#dadce0"
+    "border": "#dadce0",
+    "sheet_header": "#eef2f7",
+    "sheet_row": "#ffffff",
+    "sheet_row_alt": "#f8f9fa",
 }
 
 
@@ -36,59 +38,82 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
         self.subjects = []
         self.current_term = 1
         self.current_class = ""
+        self._loading = False
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-
         self.setup_ui()
 
     def setup_ui(self):
-        # Header with controls
         header_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 15))
 
-        # Top title row
         top_row = ctk.CTkFrame(header_frame, fg_color="transparent")
         top_row.pack(fill="x", padx=20, pady=(15, 0))
 
         ctk.CTkLabel(
             top_row,
-            text="Enhanced Broadsheet & Report Cards",
+            text=TextLabelManager.get_header_text("broadsheet"),
             font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["text_primary"],
         ).pack(side="left")
 
-        # Controls on a new dedicated row below the title
+        self.status_label = ctk.CTkLabel(
+            top_row,
+            text="",
+            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=COLORS["text_secondary"],
+        )
+        self.status_label.pack(side="left", padx=12)
+
         controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         controls_frame.pack(fill="x", padx=15, pady=(5, 15))
 
-        # Class selection
         ctk.CTkLabel(
             controls_frame,
-            text="Class:",
+            text="Session:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
+            text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(5, 5))
 
-        class_values = [f"{cls} ({self.get_class_population(cls)})" for cls in ["SSS1", "SSS2", "SSS3"]]
-        self.class_filter = ctk.CTkComboBox(
+        self.session_filter = ctk.CTkComboBox(
             controls_frame,
-            values=class_values,
+            values=["All Sessions"],
             width=130,
             height=38,
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            font=ctk.CTkFont(family="Segoe UI", size=13),
         )
+        self.session_filter.set("All Sessions")
+        self.session_filter.pack(side="left", padx=(0, 10))
+
+        ctk.CTkLabel(
+            controls_frame,
+            text="Class:",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            text_color=COLORS["text_secondary"],
+        ).pack(side="left", padx=(5, 5))
+
+        self.class_filter = ctk.CTkComboBox(
+            controls_frame,
+            values=["SSS1", "SSS2", "SSS3"],
+            width=100,
+            height=38,
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+        )
+        self.class_filter.set("SSS1")
         self.class_filter.pack(side="left", padx=(0, 10))
 
-        # Department selection
         ctk.CTkLabel(
             controls_frame,
             text="Dept:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
+            text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(5, 5))
 
         self.dept_filter = ctk.CTkComboBox(
@@ -99,17 +124,16 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            font=ctk.CTkFont(family="Segoe UI", size=13),
         )
         self.dept_filter.set("All Departments")
         self.dept_filter.pack(side="left", padx=(0, 10))
 
-        # Term selection
         ctk.CTkLabel(
             controls_frame,
             text="Term:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
+            text_color=COLORS["text_secondary"],
         ).pack(side="left", padx=(5, 5))
 
         self.term_filter = ctk.CTkComboBox(
@@ -120,34 +144,11 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
-        )
-        self.term_filter.pack(side="left", padx=(0, 10))
-
-        # Academic Year
-        ctk.CTkLabel(
-            controls_frame,
-            text="Year:",
             font=ctk.CTkFont(family="Segoe UI", size=13),
-            text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(5, 5))
-
-        current_year = datetime.now().year
-        years = [str(year) for year in range(current_year - 5, current_year + 2)]
-        self.year_filter = ctk.CTkComboBox(
-            controls_frame,
-            values=years,
-            width=85,
-            height=38,
-            corner_radius=8,
-            border_width=1,
-            border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
         )
-        self.year_filter.set(str(current_year))
-        self.year_filter.pack(side="left", padx=(0, 15))
+        self.term_filter.set("1 - First Term")
+        self.term_filter.pack(side="left", padx=(0, 15))
 
-        # Load button
         ctk.CTkButton(
             controls_frame,
             text="Load Report",
@@ -157,10 +158,9 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             corner_radius=8,
             fg_color=COLORS["primary"],
             hover_color=COLORS["primary_hover"],
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
         ).pack(side="left", padx=(0, 10))
 
-        # Export button
         self.export_btn = ctk.CTkButton(
             controls_frame,
             text="Export CSV",
@@ -171,448 +171,303 @@ class EnhancedBroadsheetTab(ctk.CTkFrame):
             corner_radius=8,
             fg_color=COLORS["success"],
             hover_color="#2d8f47",
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            font=ctk.CTkFont(family="Segoe UI", size=13),
         )
         self.export_btn.pack(side="left", padx=0)
 
-        # Broadsheet Display Area
         self.sheet_frame = ctk.CTkScrollableFrame(
             self,
-            orientation="both",
+            orientation="horizontal",
             fg_color=COLORS["bg_card"],
             corner_radius=12,
             scrollbar_button_color=COLORS["primary"],
-            scrollbar_button_hover_color=COLORS["primary_hover"]
+            scrollbar_button_hover_color=COLORS["primary_hover"],
         )
         self.sheet_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+        self.sheet_frame.grid_rowconfigure(0, weight=0)
+
+        self._load_session_options()
+        self.session_filter.configure(command=lambda _v: self.load_enhanced_sheet())
+        self.class_filter.configure(command=lambda _v: self.load_enhanced_sheet())
+        self.dept_filter.configure(command=lambda _v: self.load_enhanced_sheet())
+        self.term_filter.configure(command=lambda _v: self.load_enhanced_sheet())
+        self.after(50, self.load_enhanced_sheet)
+
+    def _load_session_options(self):
+        sessions = self.session.query(AcademicSession).order_by(AcademicSession.name.desc()).all()
+        values = ["All Sessions"] + [s.name for s in sessions]
+        self.session_filter.configure(values=values)
+        self.session_filter.set("All Sessions")
 
     def get_class_population(self, class_name):
-        """Get number of students in a class."""
         return self.session.query(Student).filter_by(class_name=class_name).count()
 
+    def _sheet_cell(self, text, row, column, width=70, anchor="center", bold=False, bg=None):
+        if bg is None:
+            bg = COLORS["sheet_header"] if row == 0 else (
+                COLORS["sheet_row_alt"] if row % 2 == 0 else COLORS["sheet_row"]
+            )
+        label = ctk.CTkLabel(
+            self.sheet_frame,
+            text=text,
+            width=width,
+            anchor=anchor,
+            fg_color=bg,
+            corner_radius=0,
+            font=ctk.CTkFont(
+                family="Segoe UI",
+                size=12,
+                weight="bold" if bold or row == 0 else "normal",
+            ),
+            text_color=COLORS["text_secondary"] if row == 0 else COLORS["text_primary"],
+        )
+        label.grid(row=row, column=column, padx=0, pady=0, sticky="nsew")
+        return label
+
+    def _resolve_subjects(self, dept_choice, class_name):
+        if dept_choice and dept_choice != "All Departments":
+            dept_obj = self.session.query(Department).filter_by(name=dept_choice).first()
+            if not dept_obj:
+                return self.session.query(Subject).order_by(Subject.subject_name).all()
+            dept_subs = get_department_subjects_for_class(self.session, dept_obj.id, class_name)
+            names = [ds.subject_name for ds in dept_subs]
+            if not names:
+                return []
+            return (
+                self.session.query(Subject)
+                .filter(Subject.subject_name.in_(names))
+                .order_by(Subject.subject_name)
+                .all()
+            )
+        return self.session.query(Subject).order_by(Subject.subject_name).all()
+
     def load_enhanced_sheet(self):
-        """Load enhanced broadsheet with multi-term support."""
-        # Clear existing content
+        if not hasattr(self, "sheet_frame") or self._loading:
+            return
+        self._loading = True
+        try:
+            self._render_sheet()
+        except Exception as exc:
+            messagebox.showerror("Broadsheet Error", f"Failed to load broadsheet:\n{exc}")
+        finally:
+            self._loading = False
+
+    def _render_sheet(self):
         for widget in self.sheet_frame.winfo_children():
             widget.destroy()
 
-        # Get selections
-        class_name_full = self.class_filter.get()
-        self.current_class = class_name_full.split(' ')[0] if class_name_full else ""
-        dept_choice = self.dept_filter.get()
-        term_value = self.term_filter.get()
-        self.current_term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
-        current_year = int(self.year_filter.get())
+        self.current_class = self.class_filter.get() or "SSS1"
+        dept_choice = self.dept_filter.get() or "All Departments"
+        term_value = self.term_filter.get() or "1 - First Term"
+        self.current_term = int(str(term_value).split()[0])
+        sess_name = self.session_filter.get() or "All Sessions"
 
-        if not self.current_class:
-            messagebox.showwarning("Selection Error", "Please select a class.")
-            return
-
-        # Load students and subjects with department filter
-        from models import Department, get_department_subjects_for_class
         query = self.session.query(Student).filter_by(class_name=self.current_class)
-        if dept_choice and dept_choice != "All Departments":
+        if sess_name != "All Sessions":
+            sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
+            if sess:
+                query = query.filter_by(session_id=sess.id)
+        if dept_choice != "All Departments":
             dept_obj = self.session.query(Department).filter_by(name=dept_choice).first()
             if dept_obj:
                 query = query.filter_by(dept_id=dept_obj.id)
+
         self.students = query.order_by(Student.full_name).all()
-
-        if dept_choice and dept_choice != "All Departments":
-            dept_obj = self.session.query(Department).filter_by(name=dept_choice).first()
-            if dept_obj:
-                dept_subs = get_department_subjects_for_class(self.session, dept_obj.id, self.current_class)
-                dept_sub_names = [ds.subject_name for ds in dept_subs]
-                self.subjects = self.session.query(Subject).filter(Subject.subject_name.in_(dept_sub_names)).all()
-            else:
-                self.subjects = self.session.query(Subject).all()
-        else:
-            self.subjects = self.session.query(Subject).all()
-
+        self.subjects = self._resolve_subjects(dept_choice, self.current_class)
 
         if not self.students:
-            self.show_empty_state()
+            self._show_empty(f"No students in {self.current_class}")
+            self.export_btn.configure(state="disabled")
+            self.status_label.configure(text="(0 students)")
+            self.broadsheet_data = None
             return
 
-        # Generate enhanced broadsheet based on term
-        if self.current_term == 1:
-            self.generate_first_term_sheet()
-        elif self.current_term == 2:
-            self.generate_second_term_sheet()
-        else:  # Term 3
-            self.generate_third_term_sheet()
+        if not self.subjects:
+            self._show_empty(f"No subjects configured for {dept_choice}")
+            self.export_btn.configure(state="disabled")
+            self.status_label.configure(text=f"({len(self.students)} students · 0 subjects)")
+            self.broadsheet_data = None
+            return
 
-        # Enable export
+        student_ids = [s.id for s in self.students]
+        marks = (
+            self.session.query(Mark)
+            .filter(Mark.term == self.current_term, Mark.student_id.in_(student_ids))
+            .all()
+        )
+
+        data_map = {s.id: {} for s in self.students}
+        for mark in marks:
+            if mark.student_id not in data_map:
+                continue
+            ca = float(mark.continuous_assessment or 0)
+            exam = float(mark.exams or 0)
+            total = ca + exam
+            if total <= 0 and mark.total not in (None, ""):
+                try:
+                    total = float(mark.total)
+                except (TypeError, ValueError):
+                    total = 0
+            # Keep blank cells when the student has no score at all
+            if total == 0 and not ca and not exam and not mark.total:
+                continue
+            data_map[mark.student_id][mark.subject_id] = total
+
+        self.broadsheet_data = data_map
+        self.status_label.configure(
+            text=f"({len(self.students)} students · {len(self.subjects)} subjects · Term {self.current_term})"
+        )
         self.export_btn.configure(state="normal")
 
-    def show_empty_state(self):
-        """Show empty state when no students found."""
-        empty_frame = ctk.CTkFrame(self.sheet_frame, fg_color="transparent")
-        empty_frame.grid(row=0, column=0, pady=60, padx=100)
-        
-        ctk.CTkLabel(
-            empty_frame,
-            text="📊",
-            font=ctk.CTkFont(size=48)
-        ).pack(pady=(0, 10))
-        
-        ctk.CTkLabel(
-            empty_frame,
-            text=f"No students in {self.current_class}",
-            font=ctk.CTkFont(family="Segoe UI", size=16),
-            text_color=COLORS["text_secondary"]
-        ).pack()
+        headers = ["#", "Student ID", "Name", "Dept"] + [s.subject_code for s in self.subjects] + [
+            "Total",
+            "Avg",
+            "Grade",
+            "Pos",
+        ]
+        widths = [40, 130, 180, 100] + [64] * len(self.subjects) + [70, 70, 60, 50]
 
-    def generate_first_term_sheet(self):
-        """Generate first term broadsheet."""
-        # Header information
-        self.create_sheet_header("FIRST TERM REPORT")
-        
-        # Create table headers
-        headers = ["S/N", "Student ID", "Name", "Sex"]
-        
-        # Add subject headers (CA, Exam, Total, Grade, Position)
-        for subject in self.subjects:
-            headers.extend([
-                f"{subject.subject_code}\nCA(30)",
-                f"{subject.subject_code}\nExam(70)", 
-                f"{subject.subject_code}\nTotal",
-                f"{subject.subject_code}\nGrade",
-                f"{subject.subject_code}\nPos"
-            ])
-        
-        # Add summary headers
-        headers.extend(["Total Score", "Average", "Position", "Grade"])
-        
-        # Create headers
         for col, header in enumerate(headers):
-            label = ctk.CTkLabel(
-                self.sheet_frame,
-                text=header,
-                font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
-                text_color=COLORS["text_secondary"],
-                width=60 if col < 4 else 50
+            self._sheet_cell(
+                header,
+                0,
+                col,
+                width=widths[col] if col < len(widths) else 64,
+                anchor="center" if col != 2 else "w",
+                bold=True,
+                bg=COLORS["sheet_header"],
             )
-            label.grid(row=2, column=col, padx=1, pady=5, sticky="ew")
 
-        # Generate student data
-        student_totals = []
-        subject_stats = {}
-        
-        for i, student in enumerate(self.students, start=1):
-            col = 0
-            
-            # Basic info
-            ctk.CTkLabel(self.sheet_frame, text=str(i), width=40).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            ctk.CTkLabel(self.sheet_frame, text=student.student_id, width=80).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            ctk.CTkLabel(self.sheet_frame, text=student.name[:15], width=120).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            ctk.CTkLabel(self.sheet_frame, text=student.sex, width=40).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            
-            student_total = 0
-            subject_count = 0
-            
-            # Subject marks
+        ranked = []
+        for student in self.students:
+            scores = []
             for subject in self.subjects:
-                mark = self.session.query(Mark).filter_by(
-                    student_id=student.id, 
-                    subject_id=subject.id, 
-                    term=self.current_term
-                ).first()
-                
-                if mark:
-                    ca = mark.continuous_assessment or 0
-                    exam = mark.exams or 0
-                    total = mark.total or 0
-                    grade = mark.grade or "-"
-                    
-                    student_total += total
-                    subject_count += 1
-                    
-                    # Store for position calculation
-                    if subject.id not in subject_stats:
-                        subject_stats[subject.id] = []
-                    subject_stats[subject.id].append((student.id, total))
+                value = data_map[student.id].get(subject.id)
+                if isinstance(value, (int, float)):
+                    scores.append(float(value))
+            total = sum(scores)
+            avg = total / len(scores) if scores else 0.0
+            ranked.append((student.id, total, avg))
+
+        ranked.sort(key=lambda item: (item[1], item[2]), reverse=True)
+        positions = {}
+        for index, (student_id, _total, _avg) in enumerate(ranked):
+            if index > 0 and ranked[index - 1][1] == _total and ranked[index - 1][2] == _avg:
+                positions[student_id] = positions[ranked[index - 1][0]]
+            else:
+                positions[student_id] = index + 1
+
+        for row, student in enumerate(self.students, start=1):
+            row_bg = COLORS["sheet_row"] if row % 2 == 1 else COLORS["sheet_row_alt"]
+            dept_name = student.department.name if getattr(student, "department", None) else "-"
+
+            self._sheet_cell(str(row), row, 0, width=40, bg=row_bg, anchor="center")
+            self._sheet_cell(student.student_id, row, 1, width=130, bg=row_bg, anchor="w")
+            self._sheet_cell(student.full_name, row, 2, width=180, bg=row_bg, anchor="w")
+            self._sheet_cell(dept_name, row, 3, width=100, bg=row_bg, anchor="center")
+
+            scores = []
+            for col, subject in enumerate(self.subjects, start=4):
+                value = data_map[student.id].get(subject.id, "-")
+                if isinstance(value, (int, float)):
+                    scores.append(float(value))
+                    text = f"{value:.0f}"
                 else:
-                    ca = exam = total = 0
-                    grade = "-"
-                
-                # Display marks
-                ctk.CTkLabel(self.sheet_frame, text=f"{ca:.0f}", width=50).grid(row=i+2, column=col, padx=1, pady=2)
-                col += 1
-                ctk.CTkLabel(self.sheet_frame, text=f"{exam:.0f}", width=50).grid(row=i+2, column=col, padx=1, pady=2)
-                col += 1
-                ctk.CTkLabel(self.sheet_frame, text=f"{total:.0f}", width=50).grid(row=i+2, column=col, padx=1, pady=2)
-                col += 1
-                ctk.CTkLabel(self.sheet_frame, text=grade, width=40).grid(row=i+2, column=col, padx=1, pady=2)
-                col += 1
-                
-                # Position placeholder (will be calculated)
-                pos_label = ctk.CTkLabel(self.sheet_frame, text="-", width=40)
-                pos_label.grid(row=i+2, column=col, padx=1, pady=2)
-                col += 1
-            
-            # Student summary
-            average = student_total / subject_count if subject_count > 0 else 0
-            student_totals.append((student.id, student_total, average, i+2))  # Store row for position update
-            
-            ctk.CTkLabel(self.sheet_frame, text=f"{student_total:.0f}", width=60).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            ctk.CTkLabel(self.sheet_frame, text=f"{average:.1f}", width=60).grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            
-            # Overall position placeholder
-            pos_label = ctk.CTkLabel(self.sheet_frame, text="-", width=50)
-            pos_label.grid(row=i+2, column=col, padx=1, pady=2)
-            col += 1
-            
-            # Overall grade
-            overall_grade = GradeCalculator.calculate_grade(average)
-            ctk.CTkLabel(self.sheet_frame, text=overall_grade, width=50).grid(row=i+2, column=col, padx=1, pady=2)
+                    text = "-"
+                self._sheet_cell(text, row, col, width=64, bg=row_bg, anchor="center")
 
-        # Calculate and update positions
-        self.calculate_positions(subject_stats, student_totals)
-        
-        # Add statistics summary
-        self.add_statistics_summary(len(self.students) + 5)
+            total = sum(scores)
+            avg = total / len(scores) if scores else 0.0
+            grade = GradeCalculator.calculate_grade(avg) if scores else "-"
+            pos = positions.get(student.id, "-")
+            summary_col = len(self.subjects) + 4
 
-    def generate_second_term_sheet(self):
-        """Generate second term broadsheet with first term comparison."""
-        # Header information
-        self.create_sheet_header("SECOND TERM REPORT (with First Term Comparison)")
-        
-        # Create comprehensive headers
-        headers = ["S/N", "Student ID", "Name", "Sex"]
-        
-        # Add subject headers with both terms
-        for subject in self.subjects:
-            headers.extend([
-                f"{subject.subject_code}\nSecond Term CA(30)",
-                f"{subject.subject_code}\nFirst Term CA(30)",
-                f"{subject.subject_code}\nSecond Term Exam(70)",
-                f"{subject.subject_code}\nFirst Term Exam(70)",
-                f"{subject.subject_code}\nSecond Term Total",
-                f"{subject.subject_code}\nFirst Term Total",
-                f"{subject.subject_code}\nSecond Term Grade",
-                f"{subject.subject_code}\nFirst Term Grade",
-                f"{subject.subject_code}\nSecond Term Pos",
-                f"{subject.subject_code}\nFirst Term Pos"
-            ])
-        
-        # Add summary headers
-        headers.extend([
-            "Second Term Total", "First Term Total", "Second Term Average", "First Term Average", 
-            "Second Term Position", "First Term Position", "Second Term Grade", "First Term Grade"
-        ])
-        
-        # Create headers (smaller font due to more columns)
-        for col, header in enumerate(headers):
-            label = ctk.CTkLabel(
-                self.sheet_frame,
-                text=header,
-                font=ctk.CTkFont(family="Segoe UI", size=8, weight="bold"),
-                text_color=COLORS["text_secondary"],
-                width=45 if col < 4 else 35
-            )
-            label.grid(row=2, column=col, padx=1, pady=3, sticky="ew")
+            self._sheet_cell(f"{total:.0f}", row, summary_col, width=70, bold=True, bg=row_bg)
+            self._sheet_cell(f"{avg:.1f}", row, summary_col + 1, width=70, bg=row_bg)
+            self._sheet_cell(str(grade), row, summary_col + 2, width=60, bold=True, bg=row_bg)
+            self._sheet_cell(str(pos), row, summary_col + 3, width=50, bold=True, bg=row_bg)
 
-        # Generate student data with both terms
-        self.generate_dual_term_data(2, 1)  # Term 2 vs Term 1
-
-    def generate_third_term_sheet(self):
-        """Generate third term broadsheet with all terms and yearly summary."""
-        # Header information  
-        self.create_sheet_header("THIRD TERM REPORT (Complete Year Summary)")
-        
-        # This will be the most comprehensive report
-        headers = ["S/N", "Student ID", "Name", "Sex"]
-        
-        # Add subject headers for all three terms plus averages
-        for subject in self.subjects:
-            headers.extend([
-                f"{subject.subject_code}\nThird Term Total",
-                f"{subject.subject_code}\nSecond Term Total", 
-                f"{subject.subject_code}\nFirst Term Total",
-                f"{subject.subject_code}\nYear Avg",
-                f"{subject.subject_code}\nYear Grade",
-                f"{subject.subject_code}\nYear Pos"
-            ])
-        
-        # Add comprehensive summary
-        headers.extend([
-            "Third Term Total", "Second Term Total", "First Term Total", "Year Total",
-            "Third Term Avg", "Second Term Avg", "First Term Avg", "Year Avg",
-            "Third Term Pos", "Second Term Pos", "First Term Pos", "Year Pos",
-            "Year Grade"
-        ])
-        
-        # Create headers
-        for col, header in enumerate(headers):
-            label = ctk.CTkLabel(
-                self.sheet_frame,
-                text=header,
-                font=ctk.CTkFont(family="Segoe UI", size=8, weight="bold"),
-                text_color=COLORS["text_secondary"],
-                width=40 if col < 4 else 30
-            )
-            label.grid(row=2, column=col, padx=1, pady=3, sticky="ew")
-
-        # Generate comprehensive year data
-        self.generate_year_summary_data()
-
-    def generate_dual_term_data(self, current_term, comparison_term):
-        """Generate data comparing two terms."""
-        # Implementation for dual term comparison
-        # This is a complex method that would handle the comparison logic
-        pass
-
-    def generate_year_summary_data(self):
-        """Generate complete year summary data."""
-        # Implementation for year summary
-        # This would calculate averages across all terms
-        pass
-
-    def calculate_positions(self, subject_stats, student_totals):
-        """Calculate positions for subjects and overall."""
-        # Calculate subject positions
-        for subject_id, scores in subject_stats.items():
-            scores.sort(key=lambda x: x[1], reverse=True)  # Sort by score descending
-            for pos, (student_id, score) in enumerate(scores, 1):
-                # Update position in the grid (this would need grid reference tracking)
-                pass
-        
-        # Calculate overall positions
-        student_totals.sort(key=lambda x: x[2], reverse=True)  # Sort by average descending
-        for pos, (student_id, total, average, row) in enumerate(student_totals, 1):
-            # Update overall position in the grid
-            pass
-
-    def create_sheet_header(self, title):
-        """Create header section for the broadsheet."""
-        # School info header
-        header_info = ctk.CTkFrame(self.sheet_frame, fg_color="transparent")
-        header_info.grid(row=0, column=0, columnspan=20, pady=10, sticky="ew")
-        
+    def _show_empty(self, message):
+        empty = ctk.CTkFrame(self.sheet_frame, fg_color="transparent")
+        empty.grid(row=0, column=0, pady=60, padx=40)
         ctk.CTkLabel(
-            header_info,
-            text="SCHOOL MANAGEMENT SYSTEM",
+            empty,
+            text=message,
             font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-            text_color=COLORS["text_primary"]
+            text_color=COLORS["text_primary"],
         ).pack()
-        
         ctk.CTkLabel(
-            header_info,
-            text=title,
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            text_color=COLORS["primary"]
-        ).pack()
-        
-        info_text = f"Class: {self.current_class} | Term: {self.current_term} | Year: {self.year_filter.get()}"
-        ctk.CTkLabel(
-            header_info,
-            text=info_text,
-            font=ctk.CTkFont(family="Segoe UI", size=12),
-            text_color=COLORS["text_secondary"]
-        ).pack(pady=(5, 15))
-
-    def add_statistics_summary(self, start_row):
-        """Add detailed statistics summary below the main table."""
-        stats_frame = ctk.CTkFrame(self.sheet_frame, fg_color=COLORS["bg_dark"], corner_radius=8)
-        stats_frame.grid(row=start_row, column=0, columnspan=20, pady=20, padx=10, sticky="ew")
-        
-        ctk.CTkLabel(
-            stats_frame,
-            text="📈 DETAILED STATISTICS SUMMARY",
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(pady=10)
-        
-        # Add various statistics here
-        stats_text = self.generate_statistics_text()
-        ctk.CTkLabel(
-            stats_frame,
-            text=stats_text,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
+            empty,
+            text="Adjust the filters above, or enter marks in Grades Entry.",
+            font=ctk.CTkFont(family="Segoe UI", size=13),
             text_color=COLORS["text_secondary"],
-            justify="left"
-        ).pack(padx=20, pady=10)
-
-    def generate_statistics_text(self):
-        """Generate comprehensive statistics text."""
-        # Calculate various statistics
-        total_students = len(self.students)
-        
-        # This would include:
-        # - Class average
-        # - Highest/lowest scores per subject
-        # - Pass/fail rates
-        # - Grade distribution
-        # - Subject performance analysis
-        
-        return f"""
-CLASS PERFORMANCE ANALYSIS:
-• Total Students: {total_students}
-• Class Average: [Calculated]
-• Pass Rate: [Calculated]%
-• Grade Distribution: A: [X], B: [X], C: [X], D: [X], F: [X]
-
-SUBJECT ANALYSIS:
-• Best Performing Subject: [Subject Name] (Avg: [Score])
-• Weakest Subject: [Subject Name] (Avg: [Score])
-• Most Improved: [Analysis]
-
-RECOMMENDATIONS:
-• [Generated recommendations based on performance]
-        """
+        ).pack(pady=(6, 0))
 
     def export_enhanced_csv(self):
-        """Export enhanced broadsheet to CSV."""
-        if not self.students:
-            messagebox.showwarning("No Data", "Please load a broadsheet first.")
+        if not self.broadsheet_data or not self.students or not self.subjects:
+            messagebox.showwarning("No Data", "Load a broadsheet before exporting.")
             return
-        
+
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
-            title="Save Enhanced Broadsheet"
+            title="Save Broadsheet",
+            initialfile=safe_export_filename(
+                "Broadsheet",
+                self.current_class,
+                f"Term{self.current_term}",
+                extension="csv",
+            ),
         )
-        
-        if filename:
-            try:
-                with open(filename, 'w', newline='', encoding='utf-8') as file:
-                    writer = csv.writer(file)
-                    
-                    # Write header information
-                    writer.writerow([f"Enhanced Broadsheet - {self.current_class} - Term {self.current_term}"])
-                    writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-                    writer.writerow([])  # Empty row
-                    
-                    # Write data based on current term
-                    if self.current_term == 1:
-                        self.export_first_term_csv(writer)
-                    elif self.current_term == 2:
-                        self.export_second_term_csv(writer)
-                    else:
-                        self.export_third_term_csv(writer)
-                
-                messagebox.showinfo("Success", f"Enhanced broadsheet exported to {filename}")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+        if not filename:
+            return
 
-    def export_first_term_csv(self, writer):
-        """Export first term data to CSV."""
-        # Implementation for first term CSV export
-        pass
+        try:
+            ranked = []
+            for student in self.students:
+                scores = [
+                    float(self.broadsheet_data[student.id][sub.id])
+                    for sub in self.subjects
+                    if isinstance(self.broadsheet_data[student.id].get(sub.id), (int, float))
+                ]
+                total = sum(scores)
+                avg = total / len(scores) if scores else 0.0
+                ranked.append((student.id, total, avg))
+            ranked.sort(key=lambda item: (item[1], item[2]), reverse=True)
+            positions = {student_id: index + 1 for index, (student_id, _, _) in enumerate(ranked)}
 
-    def export_second_term_csv(self, writer):
-        """Export second term comparison data to CSV."""
-        # Implementation for second term CSV export
-        pass
+            with open(filename, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        f"Broadsheet - {self.current_class} - Term {self.current_term}",
+                        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    ]
+                )
+                writer.writerow([])
+                writer.writerow(
+                    ["#", "Student ID", "Name", "Department"]
+                    + [sub.subject_code for sub in self.subjects]
+                    + ["Total", "Average", "Grade", "Position"]
+                )
 
-    def export_third_term_csv(self, writer):
-        """Export complete year summary to CSV."""
-        # Implementation for third term CSV export
-        pass
+                for index, student in enumerate(self.students, start=1):
+                    dept_name = student.department.name if getattr(student, "department", None) else "-"
+                    row = [index, student.student_id, student.full_name, dept_name]
+                    scores = []
+                    for subject in self.subjects:
+                        value = self.broadsheet_data[student.id].get(subject.id, "")
+                        if isinstance(value, (int, float)):
+                            scores.append(float(value))
+                            row.append(f"{value:.0f}")
+                        else:
+                            row.append("")
+                    total = sum(scores)
+                    avg = total / len(scores) if scores else 0.0
+                    grade = GradeCalculator.calculate_grade(avg) if scores else ""
+                    row.extend([f"{total:.0f}", f"{avg:.1f}", grade, positions.get(student.id, "")])
+                    writer.writerow(row)
+
+            messagebox.showinfo("Success", f"Broadsheet exported to:\n{filename}")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Failed to export: {exc}")

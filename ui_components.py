@@ -444,6 +444,36 @@ MODAL_STYLE = {
 CLASS_FILTER_OPTIONS = ["All Classes", "SSS1", "SSS2", "SSS3"]
 
 
+class DebouncedCallback:
+    """Cancel-and-reschedule helper so filters don't rebuild UI on every keystroke."""
+
+    def __init__(self, widget, callback, delay_ms=250):
+        self.widget = widget
+        self.callback = callback
+        self.delay_ms = delay_ms
+        self._after_id = None
+
+    def __call__(self, *_args):
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+        self._after_id = self.widget.after(self.delay_ms, self._fire)
+
+    def _fire(self):
+        self._after_id = None
+        self.callback()
+
+    def cancel(self):
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+
 def safe_export_filename(*parts, extension=""):
     """Build a filesystem-safe default export name from one or more parts."""
     def clean(part):

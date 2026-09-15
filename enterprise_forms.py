@@ -22,6 +22,7 @@ from ui_components import (
     NIGERIAN_STATES,
     MODAL_STYLE,
     CLASS_FILTER_OPTIONS,
+    DebouncedCallback,
     center_toplevel,
     create_modal_header,
     create_section_header,
@@ -66,6 +67,8 @@ class StudentsListTab(ctk.CTkFrame):
         while hasattr(root_window, 'master') and root_window.master:
             root_window = root_window.master
         self.modal_controller = ModalController(root_window)
+        self._search_reload = None
+        self._loading_students = False
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -103,12 +106,22 @@ class StudentsListTab(ctk.CTkFrame):
 
         # Session
         self.session_var = ctk.StringVar()
-        self.session_filter = ctk.CTkComboBox(filters_frame, variable=self.session_var, width=120, command=lambda _: self.load_students())
+        self.session_filter = ctk.CTkComboBox(
+            filters_frame,
+            variable=self.session_var,
+            width=120,
+            command=lambda _: self._apply_filters_now(),
+        )
         self.session_filter.pack(side="left", padx=(0, 5))
         
         # Dept
         self.dept_var = ctk.StringVar()
-        self.dept_filter = ctk.CTkComboBox(filters_frame, variable=self.dept_var, width=120, command=lambda _: self.load_students())
+        self.dept_filter = ctk.CTkComboBox(
+            filters_frame,
+            variable=self.dept_var,
+            width=120,
+            command=lambda _: self._apply_filters_now(),
+        )
         self.dept_filter.pack(side="left", padx=5)
 
         # Class
@@ -118,7 +131,7 @@ class StudentsListTab(ctk.CTkFrame):
             variable=self.class_filter_var,
             values=CLASS_FILTER_OPTIONS,
             width=130,
-            command=lambda _value: self.load_students(),
+            command=lambda _value: self._apply_filters_now(),
             **input_style(),
         )
         class_filter.pack(side="left", padx=5)
@@ -133,9 +146,15 @@ class StudentsListTab(ctk.CTkFrame):
             **input_style(),
         )
         search_entry.pack(side="left", padx=5)
-        self.search_var.trace_add("write", lambda *args: self.load_students())
+        self._search_reload = DebouncedCallback(self, self.load_students, delay_ms=250)
+        self.search_var.trace_add("write", self._search_reload)
         
         self._load_filter_options()
+
+    def _apply_filters_now(self):
+        if self._search_reload:
+            self._search_reload.cancel()
+        self.load_students()
 
     def _load_filter_options(self):
         from models import AcademicSession, Department
@@ -169,12 +188,20 @@ class StudentsListTab(ctk.CTkFrame):
         self.students_list_frame.grid_columnconfigure(6, weight=0, minsize=180)  # Actions
 
     def load_students(self):
+        if not hasattr(self, "students_list_frame") or not hasattr(self, "session_var"):
+            return
+        if self._loading_students:
+            return
+        self._loading_students = True
+        try:
+            self._render_students()
+        finally:
+            self._loading_students = False
+
+    def _render_students(self):
         # Clear existing student list
         for widget in self.students_list_frame.winfo_children():
             widget.destroy()
-
-        if not hasattr(self, 'session_var'):
-            return
 
         search_term = self.search_var.get().lower().strip()
         class_filter = self.class_filter_var.get()
@@ -211,7 +238,7 @@ class StudentsListTab(ctk.CTkFrame):
             
             message = (
                 "No students found"
-                if (search_term or class_filter != "All Classes")
+                if (search_term or class_filter != "All Classes" or sess_name != "All Sessions" or dept_name != "All Departments")
                 else "No students registered yet"
             )
             ctk.CTkLabel(
@@ -221,7 +248,7 @@ class StudentsListTab(ctk.CTkFrame):
                 text_color=COLORS["text_primary"],
             ).pack()
             
-            if not search_term and class_filter == "All Classes":
+            if not search_term and class_filter == "All Classes" and sess_name == "All Sessions" and dept_name == "All Departments":
                 ctk.CTkLabel(
                     empty_frame,
                     text="Go to 'Registration' to add students",
@@ -905,8 +932,9 @@ class SchoolFeesTab(ctk.CTkFrame):
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            font=ctk.CTkFont(family="Segoe UI", size=13),
         )
+        self.class_filter.set("SSS1")
         self.class_filter.pack(side="left", padx=5)
 
         ctk.CTkLabel(
@@ -924,8 +952,9 @@ class SchoolFeesTab(ctk.CTkFrame):
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            font=ctk.CTkFont(family="Segoe UI", size=13),
         )
+        self.term_filter.set("1 - First Term")
         self.term_filter.pack(side="left", padx=5)
 
         ctk.CTkButton(
@@ -974,9 +1003,13 @@ class SchoolFeesTab(ctk.CTkFrame):
         for i in range(7):
             self.fees_list_frame.grid_columnconfigure(i, weight=1)
 
+        self.class_filter.configure(command=lambda _value: self.load_fees())
+        self.term_filter.configure(command=lambda _value: self.load_fees())
+        self.load_fees()
+
     def _selected_scope(self):
-        class_name = self.class_filter.get()
-        term_value = self.term_filter.get()
+        class_name = self.class_filter.get() or "SSS1"
+        term_value = self.term_filter.get() or "1 - First Term"
         term = int(term_value.split()[0]) if ' - ' in term_value else int(term_value)
         return class_name, term
 
@@ -989,10 +1022,15 @@ class SchoolFeesTab(ctk.CTkFrame):
         )
 
     def load_fees(self):
+        if not hasattr(self, "fees_list_frame"):
+            return
+
         for widget in self.fees_list_frame.winfo_children():
             widget.destroy()
 
         class_name, term = self._selected_scope()
+        if not class_name:
+            return
         sync_fees_for_scope(self.session, class_name, term)
 
         structure = get_fee_structure(self.session, class_name, term)
@@ -1580,28 +1618,13 @@ class DashboardTab(ctk.CTkFrame):
         
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
-        
-        import os
-        from PIL import Image
-        from app_paths import find_asset
-        
-        banner_path = find_asset(("assets/school-ad-banner.png", "school-ad-banner.png"))
-        if banner_path and os.path.exists(banner_path):
-            try:
-                img = Image.open(banner_path)
-                width, height = img.size
-                aspect_ratio = width / height
-                new_width = 800
-                new_height = int(new_width / aspect_ratio)
-                img = img.resize((new_width, new_height))
-                photo = ctk.CTkImage(light_image=img, dark_image=img, size=(new_width, new_height))
-                
-                label = ctk.CTkLabel(self, image=photo, text="")
-                label.pack(expand=True, fill="both", padx=20, pady=20)
-            except Exception as e:
-                ctk.CTkLabel(self, text=f"Dashboard\nError loading banner: {e}").pack(expand=True)
-        else:
-            ctk.CTkLabel(self, text="Dashboard\n(Banner ad not found)").pack(expand=True)
+
+        ctk.CTkLabel(
+            self,
+            text="Dashboard",
+            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
+            text_color=COLORS["text_primary"],
+        ).pack(expand=True)
 
 class EnterpriseSchoolManagementApp:
     def __init__(self, root, current_admin=None):
@@ -1847,6 +1870,9 @@ class EnterpriseSchoolManagementApp:
                 frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
             else:
                 frame.grid_forget()
+
+        if name == "Broadsheet" and hasattr(self, "broadsheet_frame"):
+            self.root.after(30, self.broadsheet_frame.load_enhanced_sheet)
 
     def refresh_data(self):
         self.marks_frame.load_students()

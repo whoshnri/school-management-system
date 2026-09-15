@@ -447,11 +447,12 @@ class ReportCardsTab(ctk.CTkFrame):
         sess_name = self.session_var.get()
         dept_name = self.dept_var.get()
         cls_name = self.class_var.get()
+        previous = self.student_var.get()
         
-        if sess_name != "All Sessions":
+        if sess_name and sess_name != "All Sessions":
             sess = self.session.query(AcademicSession).filter_by(name=sess_name).first()
             if sess: query = query.filter_by(session_id=sess.id)
-        if dept_name != "All Departments":
+        if dept_name and dept_name != "All Departments":
             dept = self.session.query(Department).filter_by(name=dept_name).first()
             if dept: query = query.filter_by(dept_id=dept.id)
         if cls_name and cls_name != "All Classes":
@@ -471,7 +472,9 @@ class ReportCardsTab(ctk.CTkFrame):
             return
 
         self.student_combo.configure(values=labels, state="normal")
-        if not self.student_var.get() or self.student_var.get() not in labels:
+        if previous in labels:
+            self.student_var.set(previous)
+        else:
             self.student_var.set(labels[0])
         self.on_student_selected(self.student_var.get())
 
